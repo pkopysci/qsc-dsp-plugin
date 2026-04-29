@@ -1,0 +1,24 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>gcu-common-utils</id>
+    <version>4.3.3</version>
+    <title>GCU AV Framework Common Utilities</title>
+    <authors>PK Design, GCU</authors>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <licenseUrl>https://opensource.org/license/mit</licenseUrl>
+    <projectUrl>https://github.com/Grand-Canyon-University-Campus-Tech</projectUrl>
+    <description>Utility classes used throught the GCU AV Framework.</description>
+    <releaseNotes>Added WakeOnLan utility class.</releaseNotes>
+    <copyright>Copyright (c) 2025 Grand Canyon University</copyright>
+    <repository type="private" url="https://github.com/Grand-Canyon-University-Campus-Tech" commit="575064a73c5d976dffe10b95ee39f710b52e89e9" />
+    <dependencies>
+      <group targetFramework="net8.0">
+        <dependency id="Crestron.SimplSharp.SDK.ProgramLibrary" version="2.21.226" exclude="Build,Analyzers" />
+        <dependency id="SSH.NET" version="2024.2.0" exclude="Build,Analyzers" />
+        <dependency id="Serilog" version="4.3.0" exclude="Build,Analyzers" />
+        <dependency id="Serilog.Sinks.File" version="7.0.0" exclude="Build,Analyzers" />
+      </group>
+    </dependencies>
+  </metadata>
+</package>

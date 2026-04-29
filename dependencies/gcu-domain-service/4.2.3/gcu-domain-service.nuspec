@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>gcu-domain-service</id>
+    <version>4.2.3</version>
+    <title>GCU AVF Domain Service Library</title>
+    <authors>PK Design, GCU</authors>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <licenseUrl>https://opensource.org/license/mit</licenseUrl>
+    <projectUrl>https://github.com/Grand-Canyon-University-Campus-Tech</projectUrl>
+    <description>Domain service API for the GCU AV Framework designed to run on Crestron control systems. This provides configuration data objects used by all services in the framework.</description>
+    <releaseNotes>Converted logging system to use Serilog. NOTE: this is a breakiing change to the logging API.</releaseNotes>
+    <copyright>Copyright (c) 2025 Grand Canyon University</copyright>
+    <repository type="private" url="https://github.com/Grand-Canyon-University-Campus-Tech" commit="575064a73c5d976dffe10b95ee39f710b52e89e9" />
+    <dependencies>
+      <group targetFramework="net8.0">
+        <dependency id="gcu-common-utils" version="4.3.3" exclude="Build,Analyzers" />
+        <dependency id="Newtonsoft.Json" version="13.0.3" exclude="Build,Analyzers" />
+      </group>
+    </dependencies>
+  </metadata>
+</package>

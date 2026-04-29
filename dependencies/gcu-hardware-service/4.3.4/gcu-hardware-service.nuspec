@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>gcu-hardware-service</id>
+    <version>4.3.4</version>
+    <title>GCU AVF Hardware Service Library</title>
+    <authors>PK Design, GCU</authors>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <licenseUrl>https://opensource.org/license/mit</licenseUrl>
+    <projectUrl>https://github.com/Grand-Canyon-University-Campus-Tech</projectUrl>
+    <description>Hardware service API for the GCU AV Framework. This is a required library for any device control plugin development.</description>
+    <releaseNotes>Updated ISerialEndpoint API to allow for returning a null value from GetComPort().</releaseNotes>
+    <copyright>Copyright (c) 2025 Grand Canyon University</copyright>
+    <repository type="git" url="https://github.com/Grand-Canyon-University-Campus-Tech" commit="575064a73c5d976dffe10b95ee39f710b52e89e9" />
+    <dependencies>
+      <group targetFramework="net8.0">
+        <dependency id="gcu-config-service" version="4.2.4" exclude="Build,Analyzers" />
+        <dependency id="gcu-domain-service" version="4.2.3" exclude="Build,Analyzers" />
+        <dependency id="Crestron.SimplSharp.SDK.ProgramLibrary" version="2.21.226" exclude="Build,Analyzers" />
+      </group>
+    </dependencies>
+  </metadata>
+</package>

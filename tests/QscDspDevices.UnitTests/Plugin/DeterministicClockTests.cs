@@ -19,7 +19,7 @@ public sealed class DeterministicClockTests
     public async Task DelayAsync_completes_after_Advance_passes_the_deadline()
     {
         var clock = new DeterministicClock();
-        var task = clock.DelayAsync(TimeSpan.FromSeconds(15), CancellationToken.None);
+        Task task = clock.DelayAsync(TimeSpan.FromSeconds(15), CancellationToken.None);
 
         task.IsCompleted.Should().BeFalse();
         clock.PendingWaiters.Should().Be(1);
@@ -45,8 +45,8 @@ public sealed class DeterministicClockTests
     public async Task Multiple_waiters_release_in_deadline_order()
     {
         var clock = new DeterministicClock();
-        var early = clock.DelayAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
-        var late = clock.DelayAsync(TimeSpan.FromSeconds(15), CancellationToken.None);
+        Task early = clock.DelayAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+        Task late = clock.DelayAsync(TimeSpan.FromSeconds(15), CancellationToken.None);
 
         clock.Advance(TimeSpan.FromSeconds(5));
         await early;
@@ -61,7 +61,7 @@ public sealed class DeterministicClockTests
     {
         var clock = new DeterministicClock();
         using var cts = new CancellationTokenSource();
-        var task = clock.DelayAsync(TimeSpan.FromMinutes(1), cts.Token);
+        Task task = clock.DelayAsync(TimeSpan.FromMinutes(1), cts.Token);
 
         await cts.CancelAsync();
 
@@ -89,7 +89,7 @@ public sealed class DeterministicClockTests
     public void UtcNow_advances_with_Advance()
     {
         var clock = new DeterministicClock(new DateTime(2026, 4, 30, 0, 0, 0, DateTimeKind.Utc));
-        var initial = clock.UtcNow;
+        DateTime initial = clock.UtcNow;
 
         clock.Advance(TimeSpan.FromHours(1));
 

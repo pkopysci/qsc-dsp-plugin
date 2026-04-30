@@ -217,7 +217,7 @@ public sealed class QscDspTcpTests
 
     private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
     {
-        var deadline = DateTime.UtcNow + timeout;
+        DateTime deadline = DateTime.UtcNow + timeout;
         while (!condition())
         {
             if (DateTime.UtcNow > deadline)

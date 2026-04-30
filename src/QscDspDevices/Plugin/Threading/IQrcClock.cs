@@ -21,7 +21,10 @@ public interface IQrcClock
     /// Gets the current UTC time according to the clock implementation.
     /// </summary>
     /// <returns>The current UTC time.</returns>
-    DateTime UtcNow { get; }
+    DateTime UtcNow
+    {
+        get;
+    }
 
     /// <summary>
     /// Asynchronously waits for the specified duration before completing.

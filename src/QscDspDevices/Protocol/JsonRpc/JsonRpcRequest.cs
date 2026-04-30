@@ -24,7 +24,10 @@ public sealed class JsonRpcRequest
     /// correlation.
     /// </summary>
     [JsonProperty("id", Order = 1)]
-    public long Id { get; init; }
+    public long Id
+    {
+        get; init;
+    }
 
     /// <summary>
     /// Gets the QRC method name, e.g. <c>"Component.Set"</c>, <c>"NoOp"</c>,
@@ -38,5 +41,8 @@ public sealed class JsonRpcRequest
     /// integer (e.g. <c>StatusGet</c>'s literal <c>0</c>), or <c>null</c>.
     /// </summary>
     [JsonProperty("params", Order = 3, NullValueHandling = NullValueHandling.Ignore)]
-    public object? Params { get; init; }
+    public object? Params
+    {
+        get; init;
+    }
 }

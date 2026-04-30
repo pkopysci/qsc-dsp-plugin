@@ -89,9 +89,47 @@ guard in Debug builds (so violations are caught in tests).
 > Filled out as milestones land. Each diagram cites the spec compliance
 > row it discharges.
 
-### Connection state — M2
+### Connection state — M2 (shipped)
 
-(_to be added in M2_)
+```
+              ┌────────────────────┐
+              │   Disconnected     │◄────────────────┐
+              └──────────┬─────────┘                 │
+                         │ Connect()                 │ user Disconnect()
+                         ▼                           │ OR transport fault
+              ┌────────────────────┐                 │
+              │     Connecting     │─────────────────┤
+              └──────────┬─────────┘  attempt fails  │
+                         │ transport.Connected event │
+                         ▼                           │
+              ┌────────────────────┐                 │
+              │     Connected      │─────────────────┘
+              │ (queue accepting,  │
+              │  postConnect ran)  │  Disconnecting is a
+              └──────────┬─────────┘  brief transient state
+                         │ user Disconnect()
+                         ▼
+              ┌────────────────────┐
+              │   Disconnecting    │
+              └──────────┬─────────┘
+                         │ session task joined
+                         └────────────► Disconnected
+```
+
+The state machine is implemented in `src/QscDspDevices/Connectivity/ConnectionManager.cs`.
+Every transition is logged at `Logger.Notice` with the from-state, to-state, and
+cause. After a transport-reported fault, the manager transitions immediately
+to `Disconnected` (NOT `Connecting` 15 s later) so observers see the offline
+state without delay — discovered by integration test
+`Server_drop_triggers_state_back_into_Connecting_on_reconnect` and fixed in
+commit `a2f2117`. The 15-second wait between attempts is a separate
+`ReconnectStrategy` consulted on the next loop iteration.
+
+`QscDspTcp.OnStateChanged` translates these transitions to
+`BaseDevice.IsOnline` + `BaseDevice.NotifyOnlineStatus()` — IsOnline is set
+BEFORE NotifyOnlineStatus per README §3 (verified by test
+`Connect_drives_IsOnline_true_then_NotifyOnlineStatus` reading IsOnline
+inside the ConnectionChanged handler).
 
 ### Redundant core failover — M6
 

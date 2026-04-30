@@ -22,11 +22,11 @@ public sealed class JsonRpcDispatcherTests
     public async Task Pending_request_completes_when_matching_response_arrives()
     {
         var sut = new JsonRpcDispatcher("dsp-1");
-        var pending = sut.RegisterPending(42, CancellationToken.None);
+        Task<JsonRpcResponse> pending = sut.RegisterPending(42, CancellationToken.None);
 
         sut.Dispatch("""{"jsonrpc":"2.0","id":42,"result":{"ok":true}}""");
 
-        var response = await pending;
+        JsonRpcResponse response = await pending;
         response.Id.Should().Be(42);
         response.Result.Should().NotBeNull();
         response.IsError.Should().BeFalse();
@@ -68,10 +68,10 @@ public sealed class JsonRpcDispatcherTests
         sut.RegisterAutoPoll(11, subscription);
         sut.UnregisterAutoPoll(11).Should().BeTrue();
 
-        var pending = sut.RegisterPending(11, CancellationToken.None);
+        Task<JsonRpcResponse> pending = sut.RegisterPending(11, CancellationToken.None);
         sut.Dispatch("""{"jsonrpc":"2.0","id":11,"result":"ok"}""");
 
-        var response = await pending;
+        JsonRpcResponse response = await pending;
         response.Id.Should().Be(11);
         subscription.Pushed.Should().BeEmpty();
     }
@@ -124,8 +124,8 @@ public sealed class JsonRpcDispatcherTests
     public async Task CancelAllPending_faults_every_outstanding_waiter()
     {
         var sut = new JsonRpcDispatcher("dsp-1");
-        var t1 = sut.RegisterPending(1, CancellationToken.None);
-        var t2 = sut.RegisterPending(2, CancellationToken.None);
+        Task<JsonRpcResponse> t1 = sut.RegisterPending(1, CancellationToken.None);
+        Task<JsonRpcResponse> t2 = sut.RegisterPending(2, CancellationToken.None);
 
         sut.CancelAllPending("connection-dropped");
 

@@ -70,7 +70,7 @@ public sealed class ThreadCensusTests
         using var entered = new SemaphoreSlim(0, 3);
         using var release = new SemaphoreSlim(0, 3);
 
-        var tasks = Enumerable.Range(0, 3).Select(i => Task.Run(() =>
+        Task[] tasks = Enumerable.Range(0, 3).Select(i => Task.Run(() =>
         {
             sut.Register($"role-{i}").Should().BeTrue();
             entered.Release();

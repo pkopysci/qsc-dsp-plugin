@@ -146,7 +146,7 @@ public sealed class RawTcpTransport : IConnectionTransport
         ArgumentNullException.ThrowIfNull(payload);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        var stream = _stream
+        NetworkStream stream = _stream
             ?? throw new InvalidOperationException("Transport is not connected.");
         stream.Write(payload, 0, payload.Length);
     }
@@ -189,13 +189,13 @@ public sealed class RawTcpTransport : IConnectionTransport
 
     private async Task ReadLoopAsync(CancellationToken cancellationToken)
     {
-        var stream = _stream;
+        NetworkStream? stream = _stream;
         if (stream is null)
         {
             return;
         }
 
-        var buffer = new byte[16 * 1024];
+        byte[] buffer = new byte[16 * 1024];
         try
         {
             while (!cancellationToken.IsCancellationRequested)

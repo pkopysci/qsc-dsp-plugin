@@ -67,7 +67,7 @@ public sealed class JsonRpcDispatcher
 
         cancellationToken.Register(() =>
         {
-            if (_pending.TryRemove(id, out var captured))
+            if (_pending.TryRemove(id, out TaskCompletionSource<JsonRpcResponse>? captured))
             {
                 captured.TrySetCanceled(cancellationToken);
             }
@@ -151,14 +151,14 @@ public sealed class JsonRpcDispatcher
 
         // AutoPoll push? Check subscriptions first; the same id is reused
         // on every push so a one-shot waiter would never see those.
-        if (_autoPolls.TryGetValue(id, out var subscription))
+        if (_autoPolls.TryGetValue(id, out IAutoPollSubscription? subscription))
         {
             subscription.OnPush(message);
             return;
         }
 
         // One-shot pending response.
-        if (_pending.TryRemove(id, out var tcs))
+        if (_pending.TryRemove(id, out TaskCompletionSource<JsonRpcResponse>? tcs))
         {
             tcs.TrySetResult(message);
             return;
@@ -175,7 +175,7 @@ public sealed class JsonRpcDispatcher
     /// <param name="reason">The reason to surface as the cancellation message.</param>
     public void CancelAllPending(string reason)
     {
-        foreach (var (id, tcs) in _pending)
+        foreach ((long id, TaskCompletionSource<JsonRpcResponse> tcs) in _pending)
         {
             if (_pending.TryRemove(id, out _))
             {

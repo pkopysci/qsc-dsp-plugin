@@ -145,7 +145,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         _ = username;
         _ = password;
 
-        var transport = BuildTransport(hostname, port);
+        IConnectionTransport transport = BuildTransport(hostname, port);
         var queue = new CommandQueue(hostId);
         var dispatcher = new JsonRpcDispatcher(hostId);
         var manager = new ConnectionManager(

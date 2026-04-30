@@ -81,14 +81,29 @@ dotnet_naming_symbols.interface_symbols.applicable_kinds = interface
 dotnet_naming_style.i_pascal.required_prefix = I
 dotnet_naming_style.i_pascal.capitalization = pascal_case
 
-# Private fields use _camelCase (matches Microsoft Reference Source convention)
-dotnet_naming_rule.private_fields_underscore_camel.severity = warning
-dotnet_naming_rule.private_fields_underscore_camel.symbols = private_field_symbols
-dotnet_naming_rule.private_fields_underscore_camel.style = underscore_camel
-dotnet_naming_symbols.private_field_symbols.applicable_kinds = field
-dotnet_naming_symbols.private_field_symbols.applicable_accessibilities = private
+# Private INSTANCE fields use _camelCase (matches Microsoft Reference Source convention).
+# Private STATIC / CONST fields use PascalCase (matches BCL conventions; see e.g.
+# Channel.MaxValue in System.Threading.Channels). Scoping required_modifiers to
+# the empty set means "no modifiers required", but explicit non-static is
+# expressed by the absence of `static` from the symbol's modifier list — there
+# is no direct way to negate `static`, so we instead define a separate rule for
+# static + const and run it with higher priority.
+dotnet_naming_rule.private_instance_fields_underscore_camel.severity = warning
+dotnet_naming_rule.private_instance_fields_underscore_camel.symbols = private_instance_field_symbols
+dotnet_naming_rule.private_instance_fields_underscore_camel.style = underscore_camel
+dotnet_naming_symbols.private_instance_field_symbols.applicable_kinds = field
+dotnet_naming_symbols.private_instance_field_symbols.applicable_accessibilities = private
 dotnet_naming_style.underscore_camel.required_prefix = _
 dotnet_naming_style.underscore_camel.capitalization = camel_case
+
+# Private static fields and const fields keep PascalCase.
+dotnet_naming_rule.private_static_fields_pascal.severity = warning
+dotnet_naming_rule.private_static_fields_pascal.symbols = private_static_field_symbols
+dotnet_naming_rule.private_static_fields_pascal.style = pascal_style
+dotnet_naming_symbols.private_static_field_symbols.applicable_kinds = field
+dotnet_naming_symbols.private_static_field_symbols.applicable_accessibilities = private
+dotnet_naming_symbols.private_static_field_symbols.required_modifiers = static
+dotnet_naming_style.pascal_style.capitalization = pascal_case
 
 # StyleCop overrides --------------------------------------------------------
 # SA1101 — "Prefix local calls with this." Conflicts with the

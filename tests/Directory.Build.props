@@ -33,8 +33,12 @@
         CA1062 — "Validate args" — FsCheck-generated wrappers (NonNull,
                  PositiveInt, etc.) are framework-validated; the analyzer
                  doesn't know the guarantee. Production code keeps the rule.
+        SA1600 / SA1611 / SA1616 — "Elements / parameters should be
+                 documented." Test methods don't need XML doc comments;
+                 their names + Arrange/Act/Assert structure communicate
+                 intent. Production code keeps the rule.
     -->
-    <NoWarn>$(NoWarn);SA0001;SA1518;CA1707;CA1515;CA2007;CA1031;CA1062</NoWarn>
+    <NoWarn>$(NoWarn);SA0001;SA1518;SA1600;SA1611;SA1616;CA1707;CA1515;CA2007;CA1031;CA1062</NoWarn>
   </PropertyGroup>
 
 </Project>

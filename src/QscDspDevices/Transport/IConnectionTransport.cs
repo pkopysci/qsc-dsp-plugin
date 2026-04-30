@@ -53,7 +53,10 @@ public interface IConnectionTransport : IDisposable
     /// Gets a value indicating whether the transport is currently
     /// connected.
     /// </summary>
-    bool IsConnected { get; }
+    bool IsConnected
+    {
+        get;
+    }
 
     /// <summary>
     /// Begins connecting to the configured remote endpoint. Returns

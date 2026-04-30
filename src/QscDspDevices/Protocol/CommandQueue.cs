@@ -86,7 +86,10 @@ public sealed class CommandQueue : IDisposable
     }
 
     /// <summary>Gets the configured maximum outstanding-request count.</summary>
-    public int Capacity { get; }
+    public int Capacity
+    {
+        get;
+    }
 
     /// <summary>
     /// Gets a value indicating whether the queue currently accepts enqueues.
@@ -236,7 +239,7 @@ public sealed class CommandQueue : IDisposable
     public IReadOnlyList<JsonRpcRequest> SnapshotPending()
     {
         var result = new List<JsonRpcRequest>();
-        while (_channel.Reader.TryRead(out var item))
+        while (_channel.Reader.TryRead(out JsonRpcRequest? item))
         {
             result.Add(item);
         }

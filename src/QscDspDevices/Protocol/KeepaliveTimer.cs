@@ -69,7 +69,10 @@ public sealed class KeepaliveTimer
     }
 
     /// <summary>Gets the configured silence interval.</summary>
-    public TimeSpan Interval { get; }
+    public TimeSpan Interval
+    {
+        get;
+    }
 
     /// <summary>
     /// Notifies the timer that an outbound frame was just sent. Resets

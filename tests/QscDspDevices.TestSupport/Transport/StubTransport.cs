@@ -37,10 +37,16 @@ public sealed class StubTransport : IConnectionTransport
     public bool IsConnected => _connected;
 
     /// <summary>Gets the count of times <see cref="Connect"/> has been called.</summary>
-    public int ConnectCallCount { get; private set; }
+    public int ConnectCallCount
+    {
+        get; private set;
+    }
 
     /// <summary>Gets the count of times <see cref="Disconnect"/> has been called.</summary>
-    public int DisconnectCallCount { get; private set; }
+    public int DisconnectCallCount
+    {
+        get; private set;
+    }
 
     /// <summary>Gets a snapshot of every payload passed to <see cref="Send"/>.</summary>
     public IReadOnlyList<byte[]> SentPayloads => _sent.ToArray();

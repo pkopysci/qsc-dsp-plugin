@@ -49,9 +49,18 @@
   <!--
     Centralised analyzer + StyleCop packages, applied to every project.
     Test projects can opt out via <ItemGroup Condition="..."> in their .csproj.
+
+    NOTE: Microsoft.CodeAnalysis.NetAnalyzers is intentionally NOT
+    referenced here. Since SDK 5.0+, the .NET SDK ships a bundled copy
+    of those analyzers that always matches the SDK's analyzer schema —
+    activated by `<EnableNETAnalyzers>true</EnableNETAnalyzers>` above.
+    Pinning a specific NuGet version of `Microsoft.CodeAnalysis.NetAnalyzers`
+    causes a build error when the host SDK is newer than the pinned
+    version (NETSDK error from Microsoft.CodeAnalysis.NetAnalyzers.targets
+    line 648). Letting the SDK provide them keeps analyzer + SDK
+    versions perfectly aligned, both locally and in CI.
   -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" PrivateAssets="all" />
     <PackageReference Include="StyleCop.Analyzers" PrivateAssets="all" />
     <PackageReference Include="Roslynator.Analyzers" PrivateAssets="all" />
     <PackageReference Include="Roslynator.CodeAnalysis.Analyzers" PrivateAssets="all" />

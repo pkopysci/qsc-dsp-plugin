@@ -1,0 +1,9 @@
+{
+  "//": "Pins the .NET SDK to 8.0.x for deterministic local + CI builds. The Crestron RMC4 deployment target is .NET 8 (LTS); pinning the SDK to the same major.minor avoids accidentally building against a newer SDK whose analyzer set differs from what's audited.",
+  "//rollForward": "latestFeature lets us roll forward 8.0.100 -> 8.0.125 (developer machine) or 8.0.x (CI runner) but never crosses into 9.0 or 10.0.",
+  "sdk": {
+    "version": "8.0.100",
+    "rollForward": "latestFeature",
+    "allowPrerelease": false
+  }
+}

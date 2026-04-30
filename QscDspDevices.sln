@@ -1,0 +1,64 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{21E14A85-0F35-40FC-9EDC-2A4BF256A8D9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QscDspDevices", "src\QscDspDevices\QscDspDevices.csproj", "{5775F1CD-F698-4A5C-92A0-43654AA66D77}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FrameworkStubs", "src\FrameworkStubs\FrameworkStubs.csproj", "{CE815D36-35D5-4176-9090-C11DBD70DD38}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{63A15B23-474D-481F-83EC-64212AD6E3D7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QscDspDevices.UnitTests", "tests\QscDspDevices.UnitTests\QscDspDevices.UnitTests.csproj", "{49E1D0E9-D067-4FD1-9A57-206215973638}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QscDspDevices.IntegrationTests", "tests\QscDspDevices.IntegrationTests\QscDspDevices.IntegrationTests.csproj", "{F4FCFAF4-5458-4BDB-A925-24A3E64C640D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QscDspDevices.PropertyTests", "tests\QscDspDevices.PropertyTests\QscDspDevices.PropertyTests.csproj", "{D0C6940A-47F6-48FB-AE9C-84607D7B009C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QscDspDevices.TestSupport", "tests\QscDspDevices.TestSupport\QscDspDevices.TestSupport.csproj", "{A3669F45-0AE9-4644-961D-5A68F78FFBA4}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5775F1CD-F698-4A5C-92A0-43654AA66D77}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5775F1CD-F698-4A5C-92A0-43654AA66D77}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5775F1CD-F698-4A5C-92A0-43654AA66D77}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5775F1CD-F698-4A5C-92A0-43654AA66D77}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CE815D36-35D5-4176-9090-C11DBD70DD38}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CE815D36-35D5-4176-9090-C11DBD70DD38}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CE815D36-35D5-4176-9090-C11DBD70DD38}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CE815D36-35D5-4176-9090-C11DBD70DD38}.Release|Any CPU.Build.0 = Release|Any CPU
+		{49E1D0E9-D067-4FD1-9A57-206215973638}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{49E1D0E9-D067-4FD1-9A57-206215973638}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{49E1D0E9-D067-4FD1-9A57-206215973638}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{49E1D0E9-D067-4FD1-9A57-206215973638}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F4FCFAF4-5458-4BDB-A925-24A3E64C640D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F4FCFAF4-5458-4BDB-A925-24A3E64C640D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F4FCFAF4-5458-4BDB-A925-24A3E64C640D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F4FCFAF4-5458-4BDB-A925-24A3E64C640D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D0C6940A-47F6-48FB-AE9C-84607D7B009C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D0C6940A-47F6-48FB-AE9C-84607D7B009C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D0C6940A-47F6-48FB-AE9C-84607D7B009C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D0C6940A-47F6-48FB-AE9C-84607D7B009C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A3669F45-0AE9-4644-961D-5A68F78FFBA4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A3669F45-0AE9-4644-961D-5A68F78FFBA4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A3669F45-0AE9-4644-961D-5A68F78FFBA4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A3669F45-0AE9-4644-961D-5A68F78FFBA4}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{5775F1CD-F698-4A5C-92A0-43654AA66D77} = {21E14A85-0F35-40FC-9EDC-2A4BF256A8D9}
+		{CE815D36-35D5-4176-9090-C11DBD70DD38} = {21E14A85-0F35-40FC-9EDC-2A4BF256A8D9}
+		{49E1D0E9-D067-4FD1-9A57-206215973638} = {63A15B23-474D-481F-83EC-64212AD6E3D7}
+		{F4FCFAF4-5458-4BDB-A925-24A3E64C640D} = {63A15B23-474D-481F-83EC-64212AD6E3D7}
+		{D0C6940A-47F6-48FB-AE9C-84607D7B009C} = {63A15B23-474D-481F-83EC-64212AD6E3D7}
+		{A3669F45-0AE9-4644-961D-5A68F78FFBA4} = {63A15B23-474D-481F-83EC-64212AD6E3D7}
+	EndGlobalSection
+EndGlobal

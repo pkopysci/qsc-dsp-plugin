@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Hard-named per README §1: the assembly, root namespace, and DLL name
+      are all `QscDspDevices`. Do not change without updating the spec
+      compliance matrix.
+    -->
+    <AssemblyName>QscDspDevices</AssemblyName>
+    <RootNamespace>QscDspDevices</RootNamespace>
+    <Description>AV Framework hardware plug-in for QSC Q-SYS DSP control via QRC and ECP.</Description>
+
+    <!-- Shipped library — strictest settings, doc xml ON -->
+    <IsPackable>true</IsPackable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageId>QscDspDevices</PackageId>
+
+    <!--
+      CS0162 (unreachable code) is emitted by Crestron's SimplSharpPostProcess
+      target compiling its own auto-generated assembly-attributes file. It is
+      explicitly allowed by the README §4: "there is a known warning from
+      Crestron libraries that is unavoidable but does not affect functionality".
+      Suppressed narrowly here, NOT globally, so any unreachable code WE write
+      remains an error.
+    -->
+    <NoWarn>$(NoWarn);CS0162</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Allowed third-party deps (README §"Allowed 3rd Party NuGet Packages") -->
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="Crestron.SimplSharp.SDK.ProgramLibrary" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      During development we compile against the FrameworkStubs project, which
+      mirrors the real `gcu-common-utils`, `gcu-hardware-service`, and
+      `gcu-domain-service` API surface verbatim. At delivery time this
+      reference is replaced with the real GCU NuGet packages — no source
+      change required because the public surface is identical by construction.
+    -->
+    <ProjectReference Include="..\FrameworkStubs\FrameworkStubs.csproj" />
+  </ItemGroup>
+
+</Project>

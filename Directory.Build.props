@@ -1,0 +1,65 @@
+<Project>
+
+  <!--
+    Root MSBuild props applied to every project in the solution.
+    Project-specific overrides live in each .csproj (e.g. test projects
+    relax XML-doc requirements and the shipped library tightens nothing).
+
+    Why every flag here matters: this project is being delivered to a
+    third-party reviewer who is auditing the codebase for production
+    readiness. Strict-by-default removes ambiguity about what counts as
+    "done" and makes "compile + green CI" a strong correctness signal.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Strict compile -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsAsErrors />
+    <WarningLevel>9999</WarningLevel>
+    <AnalysisLevel>latest-all</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+
+    <!-- Determinism / reproducibility -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Doc generation -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!--
+      No project-wide <NoWarn> here on purpose. Suppressions live next to
+      their rationale: per-project <NoWarn> in csproj for project-specific
+      rules, .editorconfig severity overrides for repo-wide style rules.
+    -->
+
+    <!-- Repo identity -->
+    <Authors>QscDspDevices Contributors</Authors>
+    <Company>QscDspDevices</Company>
+    <Copyright>Copyright (c) 2026 QscDspDevices Contributors</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+
+    <!-- Default: library projects produce a doc xml; test projects override. -->
+  </PropertyGroup>
+
+  <!--
+    Centralised analyzer + StyleCop packages, applied to every project.
+    Test projects can opt out via <ItemGroup Condition="..."> in their .csproj.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" PrivateAssets="all" />
+    <PackageReference Include="StyleCop.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="Roslynator.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="Roslynator.CodeAnalysis.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="Roslynator.Formatting.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
+    StyleCop ruleset and an .editorconfig are picked up automatically from
+    the repo root.
+  -->
+</Project>

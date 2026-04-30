@@ -1,0 +1,104 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Stand-in for the GCU AV Framework NuGet packages. Mirrors the public
+      API surface documented in framework-docs/ exactly. NotImplementedException
+      bodies on every non-trivial member; trivial property storage and constructor
+      assignment is permitted.
+
+      WHY: the real .nupkg binaries are not in the repo (only .nuspec metadata).
+      This stub allows compile + isolated unit/integration testing. At delivery
+      time the real packages replace this reference in src/QscDspDevices.csproj.
+      Because the public surface is byte-identical, no source change is needed.
+    -->
+    <AssemblyName>FrameworkStubs</AssemblyName>
+    <RootNamespace>FrameworkStubs</RootNamespace>
+    <Description>Spec-faithful stand-in for the GCU AV Framework NuGet packages. Not for production use.</Description>
+
+    <!-- Stub assembly is never shipped or packed. -->
+    <IsPackable>false</IsPackable>
+
+    <!--
+      We don't enforce XML doc comments on stubs; the real framework's docs
+      are the source of truth. We still want analyzers and warnings-as-errors
+      so the stubs remain healthy.
+    -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!--
+      <NoWarn> for the FrameworkStubs assembly only.
+      See QscDspDevices.csproj for the CS0162 (Crestron SDK warning) story.
+      The remaining suppressions are necessary because this assembly's *job*
+      is to transcribe a documented public API surface verbatim; analyzer
+      rules that improve real production code legitimately conflict with
+      that goal here. Each rule is grouped by reason. Production code in
+      src/QscDspDevices does NOT inherit any of these — it gets the
+      strict-by-default ruleset from Directory.Build.props.
+
+      Group 1 — required by the documented public API:
+        SA1300        snake_case namespaces (gcu_common_utils etc.)
+        SA1402,SA1649 multiple sibling types per file (GenericEventArgs.cs)
+        CA1051,SA1401 public field (Preset.Tags is a documented public field)
+        CA1819        property returning byte[] (BasicTcpClient.RxBytes)
+        CA1002,CA2227 List<T> property with setter (Channel.Tags etc.)
+        CA1716        identifier matches a language keyword (Connect, ...)
+        CA1054-CA1056 URL/URI string params (matches docs)
+        CA1721,CA1724,CA1725  member naming (matches docs)
+        CA1707        underscores in identifiers (snake_case namespaces)
+      Group 2 — stub-by-design (members throw NotImplementedException):
+        CS0067        events declared but never raised
+        CA1003        EventHandler<T> usage warnings on stub events
+        CA1062        validate args — stub throws before arg is used
+        CA1065        property/Equals/GetHashCode throws (per spec)
+        CA1024        property-vs-method preference
+        CA1063,CA1816 Dispose pattern strictness on stubs
+        CA1812        internal class never instantiated
+        CA1822        instance member could be static (kept instance for parity)
+        CA1801,IDE0060 unused parameters in stub bodies
+        CA1827        prefer Any over Count — irrelevant for stubs
+        CA1815        struct override Equals — n/a
+      Group 3 — locale / culture rules:
+        CA1303        do not use literal strings in user-facing log
+        CA1304,CA1305,CA1308,CA1310 locale/culture-specific string ops
+      Group 4 — XML-doc rules superseded by GenerateDocumentationFile=false
+        but some analyzers still emit:
+        SA1600,SA1601,SA1602         missing/incomplete docs
+        SA1611,SA1614,SA1615,SA1618  parameter / return docs
+        SA1623,SA1629,SA1642,SA1643  doc comment text format
+        SA1633,SA1652                file header
+        SA0001                       XML comment analysis disabled
+      Group 5 — ordering / formatting (stubs preserve doc order):
+        SA1117,SA1124,SA1201,SA1202,SA1204,SA1208,SA1210,SA1214
+        SA1413,SA1503,SA1309
+      Group 6 — Roslynator / IDE preferences not relevant for verbatim API:
+        RCS1018,RCS1037,RCS1090,RCS1098,RCS1102,RCS1163,RCS1170,RCS1213
+        IDE0079,IDE0290
+    -->
+    <NoWarn>
+      $(NoWarn);
+      CS0162;CS0067;
+      CA1002;CA1003;CA1024;CA1051;CA1054;CA1055;CA1056;CA1062;CA1063;
+      CA1065;CA1303;CA1304;CA1305;CA1308;CA1310;CA1707;CA1716;CA1721;
+      CA1724;CA1725;CA1801;CA1812;CA1815;CA1816;CA1819;CA1822;CA1827;
+      CA2227;
+      SA0001;SA1117;SA1124;SA1201;SA1202;SA1204;SA1208;SA1210;SA1214;
+      SA1300;SA1309;SA1401;SA1402;SA1413;SA1503;SA1600;SA1601;SA1602;
+      SA1611;SA1614;SA1615;SA1618;SA1623;SA1629;SA1633;SA1642;SA1643;
+      SA1649;SA1652;
+      RCS1018;RCS1037;RCS1090;RCS1098;RCS1102;RCS1163;RCS1170;RCS1213;
+      IDE0060;IDE0079;IDE0290
+    </NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Stubs reference the real Crestron SDK so types like SocketStatus and
+      CrestronControlSystem come from the real Crestron NuGet (publicly
+      available) rather than being shimmed. README §"Allowed 3rd Party"
+      explicitly permits this package.
+    -->
+    <PackageReference Include="Crestron.SimplSharp.SDK.ProgramLibrary" />
+  </ItemGroup>
+
+</Project>

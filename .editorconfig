@@ -1,0 +1,118 @@
+# EditorConfig — https://editorconfig.org/
+#
+# This file plus the StyleCop / Roslynator analyzer packages defines the
+# code-style contract for this repository. CI runs `dotnet format
+# --verify-no-changes`; PRs that do not match are rejected.
+
+root = true
+
+# ---- All files -----------------------------------------------------------
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{xml,csproj,props,targets,config,nuspec}]
+indent_size = 2
+
+[*.{md,yml,yaml,json}]
+indent_size = 2
+trim_trailing_whitespace = false  # markdown trailing-space line breaks
+
+# ---- C# ------------------------------------------------------------------
+[*.cs]
+indent_size = 4
+csharp_indent_braces = false
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_new_line_before_members_in_object_initializers = true
+csharp_new_line_before_members_in_anonymous_types = true
+csharp_new_line_between_query_expression_clauses = true
+
+# Spaces
+csharp_space_after_cast = false
+csharp_space_after_keywords_in_control_flow_statements = true
+csharp_space_around_binary_operators = before_and_after
+
+# Wrapping
+csharp_preserve_single_line_blocks = false
+csharp_preserve_single_line_statements = false
+
+# `var` policy: explicit types except where the right-hand side makes the type
+# obvious. Helps reviewers read code without IDE help.
+csharp_style_var_for_built_in_types = false:warning
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = false:warning
+
+# Modern C# preferences
+csharp_style_expression_bodied_methods = false:none
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_style_expression_bodied_accessors = true:suggestion
+csharp_style_pattern_matching_over_is_with_cast_check = true:warning
+csharp_style_pattern_matching_over_as_with_null_check = true:warning
+csharp_style_inlined_variable_declaration = true:warning
+csharp_style_throw_expression = true:suggestion
+csharp_style_conditional_delegate_call = true:warning
+csharp_prefer_braces = true:warning           # always brace, even single-line
+csharp_using_directive_placement = outside_namespace:warning
+csharp_style_namespace_declarations = file_scoped:warning
+
+# this. qualifiers — discouraged when not needed
+dotnet_style_qualification_for_field = false:warning
+dotnet_style_qualification_for_property = false:warning
+dotnet_style_qualification_for_method = false:warning
+dotnet_style_qualification_for_event = false:warning
+
+# Predefined type names
+dotnet_style_predefined_type_for_locals_parameters_members = true:warning
+dotnet_style_predefined_type_for_member_access = true:warning
+
+# Naming conventions ------------------------------------------------------
+# Interfaces start with I
+dotnet_naming_rule.interfaces_must_start_with_i.severity = error
+dotnet_naming_rule.interfaces_must_start_with_i.symbols = interface_symbols
+dotnet_naming_rule.interfaces_must_start_with_i.style = i_pascal
+dotnet_naming_symbols.interface_symbols.applicable_kinds = interface
+dotnet_naming_style.i_pascal.required_prefix = I
+dotnet_naming_style.i_pascal.capitalization = pascal_case
+
+# Private fields use _camelCase (matches Microsoft Reference Source convention)
+dotnet_naming_rule.private_fields_underscore_camel.severity = warning
+dotnet_naming_rule.private_fields_underscore_camel.symbols = private_field_symbols
+dotnet_naming_rule.private_fields_underscore_camel.style = underscore_camel
+dotnet_naming_symbols.private_field_symbols.applicable_kinds = field
+dotnet_naming_symbols.private_field_symbols.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel.required_prefix = _
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+
+# StyleCop overrides --------------------------------------------------------
+# SA1101 — "Prefix local calls with this." Conflicts with the
+#          dotnet_style_qualification_* rules above which prohibit `this.`
+#          qualifiers when not strictly needed.
+dotnet_diagnostic.SA1101.severity = none
+# SA1633 — file header. We use the repo-wide policy described in
+#          Directory.Build.props; do not require StyleCop's verbose XML header.
+dotnet_diagnostic.SA1633.severity = none
+# SA1413 — trailing comma in initializer; we allow either form.
+dotnet_diagnostic.SA1413.severity = none
+# SA1200 — using directives MUST be inside namespace. We allow outside the
+#          namespace for files that begin with `namespace X;` (file-scoped).
+dotnet_diagnostic.SA1200.severity = none
+# SA1309 — field names must not begin with underscore. We explicitly require
+#          underscore-camel for private fields (see naming rule above).
+dotnet_diagnostic.SA1309.severity = none
+
+# Roslynator overrides — minor rule preferences ----------------------------
+# RCS1090 — ConfigureAwait(false) — we have no public async; in internal code
+#           we do use ConfigureAwait(false) but our own analyzer test covers it.
+dotnet_diagnostic.RCS1090.severity = warning
+
+# CA1707 — Identifiers should not contain underscores — our framework
+#          dependency uses snake_case namespaces (gcu_common_utils), and
+#          our test methods may use Method_Should_DoX_When_Y naming.
+dotnet_diagnostic.CA1707.severity = none

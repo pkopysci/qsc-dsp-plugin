@@ -55,3 +55,31 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# --- QscDspDevices project additions ------------------------------------
+
+# IDE / OS
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.DotSettings.user
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Coverage / test artefacts
+StrykerOutput/
+coverage/
+*.coverage
+*.coveragexml
+*.opencover.xml
+
+# OpenSpec scratchpad (none expected, but keep clean)
+openspec/changes/*/.scratch/
+
+# Local-only nuget feed config / credentials (NEVER commit creds)
+nuget.config.local
+*.credentials

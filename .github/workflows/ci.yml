@@ -1,0 +1,269 @@
+name: CI
+
+# Why this workflow runs on every PR and push to main:
+# - Build (zero warnings) is the headline guarantee.
+# - Format-verify rejects any drift from the .editorconfig.
+# - Tests with coverage merge feed into the 90% project-wide threshold.
+# - DLL-size budget enforces the README's 500 KB limit at delivery time.
+# - The qsc-critic agent is a LOCAL pre-PR step (run via Claude Code
+#   before pushing). It is NOT invoked from CI — the runner has no
+#   Claude API access. The PR template requires the developer to paste
+#   the agent's verdict line; CI does not enforce its presence.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write    # so we can post coverage / size comments
+  checks: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  build:
+    name: Build & analyzers (zero warnings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore QscDspDevices.sln
+
+      - name: Build (warnings-as-errors)
+        # The `-warnaserror` flag is belt-and-suspenders: TreatWarningsAsErrors
+        # is already set in Directory.Build.props, but a CI-level flag prevents
+        # any project-level <NoWarn> drift from hiding a warning.
+        run: dotnet build QscDspDevices.sln --no-restore -c Release -warnaserror
+
+      - name: Verify DLL size budget (≤ 500 KB = 512000 bytes)
+        # README §4: "The release DLL must not exceed 500KB in size."
+        # The comparison is in BYTES, not KB, because integer KB rounding
+        # would let a 512_999-byte DLL through while the summary still
+        # claimed "500 KB". 500 KB = 500 * 1024 = 512000 bytes exactly.
+        run: |
+          DLL=src/QscDspDevices/bin/Release/net8.0/QscDspDevices.dll
+          if [ ! -f "$DLL" ]; then
+            echo "::error::Release DLL not found at $DLL"
+            exit 1
+          fi
+          SIZE_BYTES=$(stat -c%s "$DLL")
+          BUDGET_BYTES=$((500 * 1024))
+          # Display KB with 2 decimals (still informational only).
+          SIZE_KB_DISPLAY=$(awk "BEGIN { printf \"%.2f\", $SIZE_BYTES / 1024 }")
+          BUDGET_KB_DISPLAY="500.00"
+          echo "QscDspDevices.dll size: ${SIZE_BYTES} bytes (${SIZE_KB_DISPLAY} KB)"
+          echo "Budget:                  ${BUDGET_BYTES} bytes (${BUDGET_KB_DISPLAY} KB)"
+          echo "## DLL size budget" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| File | Size (bytes) | Size (KB) | Budget (bytes) | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------------:|----------:|---------------:|:------:|" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$SIZE_BYTES" -gt "$BUDGET_BYTES" ]; then
+            echo "| QscDspDevices.dll | ${SIZE_BYTES} | ${SIZE_KB_DISPLAY} | ${BUDGET_BYTES} | ❌ over |" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::QscDspDevices.dll is ${SIZE_BYTES} bytes (${SIZE_KB_DISPLAY} KB), over the ${BUDGET_BYTES} byte (500 KB) budget."
+            exit 1
+          else
+            echo "| QscDspDevices.dll | ${SIZE_BYTES} | ${SIZE_KB_DISPLAY} | ${BUDGET_BYTES} | ✅ ok |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Release DLL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QscDspDevices-release
+          path: src/QscDspDevices/bin/Release/net8.0/QscDspDevices.*
+          if-no-files-found: error
+          retention-days: 30
+
+  format:
+    name: dotnet format --verify-no-changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet restore QscDspDevices.sln
+      - name: Verify formatting
+        # No --severity flag — the default catches every editorconfig rule
+        # (including info-level suggestions). The .editorconfig is the
+        # source of truth; CI is the enforcement gate. A failure here means
+        # the developer forgot to run `dotnet format` locally before pushing.
+        run: dotnet format QscDspDevices.sln --verify-no-changes
+
+  test:
+    name: Test, coverage, mutation report
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore QscDspDevices.sln
+
+      - name: Build (Debug, with coverage instrumentation)
+        run: dotnet build QscDspDevices.sln --no-restore -c Debug -warnaserror
+
+      - name: Run unit tests
+        run: dotnet test tests/QscDspDevices.UnitTests/QscDspDevices.UnitTests.csproj --no-build -c Debug --logger "trx;LogFileName=unit.trx" --collect:"XPlat Code Coverage" --results-directory artifacts/test-results/unit
+
+      - name: Run integration tests
+        run: dotnet test tests/QscDspDevices.IntegrationTests/QscDspDevices.IntegrationTests.csproj --no-build -c Debug --logger "trx;LogFileName=integration.trx" --collect:"XPlat Code Coverage" --results-directory artifacts/test-results/integration
+
+      - name: Run property tests
+        run: dotnet test tests/QscDspDevices.PropertyTests/QscDspDevices.PropertyTests.csproj --no-build -c Debug --logger "trx;LogFileName=property.trx" --collect:"XPlat Code Coverage" --results-directory artifacts/test-results/property
+
+      - name: Install ReportGenerator
+        run: dotnet tool install -g dotnet-reportgenerator-globaltool
+
+      - name: Merge coverage & enforce 90% line coverage
+        # ReportGenerator merges the per-test-kind Cobertura XMLs into one
+        # report. The 90% threshold gate parses the merged Cobertura XML
+        # DIRECTLY (lines-covered / lines-valid attributes on <coverage>),
+        # NOT the human-readable text summary — text formats can change
+        # between ReportGenerator versions, XML attribute names cannot.
+        run: |
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          reportgenerator \
+            -reports:'artifacts/test-results/**/coverage.cobertura.xml' \
+            -targetdir:artifacts/coverage-report \
+            -reporttypes:'Cobertura;Html;TextSummary;MarkdownSummary' \
+            -assemblyfilters:'+QscDspDevices'
+          cat artifacts/coverage-report/Summary.txt || true
+          echo "## Coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat artifacts/coverage-report/Summary.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          MERGED=artifacts/coverage-report/Cobertura.xml
+          if [ ! -f "$MERGED" ]; then
+            echo "::error::Merged Cobertura.xml not found at $MERGED"
+            exit 1
+          fi
+          # Cobertura root: <coverage line-rate="0.92" lines-covered="…" lines-valid="…" …>
+          # Parse via python (preinstalled on runner) for deterministic XML access.
+          python3 - "$MERGED" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          path = sys.argv[1]
+          root = ET.parse(path).getroot()
+          covered = int(root.attrib.get("lines-covered", "0"))
+          valid   = int(root.attrib.get("lines-valid", "0"))
+          if valid == 0:
+              print("::warning::lines-valid is 0; skipping threshold check (no instrumented code yet).")
+              sys.exit(0)
+          pct = 100.0 * covered / valid
+          threshold = 90.0
+          print(f"Line coverage: {pct:.2f}% ({covered}/{valid}) — threshold {threshold:.2f}%")
+          if pct < threshold:
+              print(f"::error::Line coverage {pct:.2f}% is below {threshold:.2f}% threshold.")
+              sys.exit(1)
+          PY
+
+      - name: Upload coverage HTML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: artifacts/coverage-report/
+          retention-days: 30
+
+      - name: Upload test result trx
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: artifacts/test-results/
+          retention-days: 30
+
+  mutation:
+    name: Stryker mutation testing (advisory)
+    runs-on: ubuntu-latest
+    needs: build
+    # Mutation testing is expensive; run on demand or scheduled (not on every PR).
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet tool install -g dotnet-stryker
+      - name: Run Stryker
+        run: |
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          cd tests/QscDspDevices.UnitTests
+          # Stryker config lives in stryker-config.json (see M7).
+          # For early milestones we tolerate stryker not being configured.
+          if [ -f stryker-config.json ]; then
+            dotnet stryker
+          else
+            echo "Stryker not yet configured for this milestone; skipping."
+          fi
+        continue-on-error: true
+      - name: Upload Stryker report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stryker-report
+          path: tests/QscDspDevices.UnitTests/StrykerOutput/**/reports/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  openspec:
+    name: OpenSpec proposal validation
+    runs-on: ubuntu-latest
+    # The OpenSpec CLI is published to npm as @fission-ai/openspec.
+    # Pinned to a specific version for reproducibility — bump deliberately,
+    # not via "latest", so a registry-side breaking change doesn't fail CI
+    # for unrelated PRs.
+    env:
+      OPENSPEC_VERSION: 1.3.1
+      OPENSPEC_TELEMETRY: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validate every active OpenSpec change (strict)
+        # `npx -y @fission-ai/openspec@<ver>` runs the pinned CLI without
+        # a global install. No `continue-on-error`: any failure here MUST
+        # fail the job — task 7.1 of M1 explicitly requires it.
+        run: |
+          shopt -s nullglob
+          dirs=(openspec/changes/*/)
+          if [ ${#dirs[@]} -eq 0 ]; then
+            echo "No active OpenSpec changes to validate."
+            exit 0
+          fi
+          fail=0
+          for dir in "${dirs[@]}"; do
+            id=$(basename "$dir")
+            echo "::group::Validating $id"
+            if npx -y "@fission-ai/openspec@${OPENSPEC_VERSION}" validate "$id" --strict; then
+              echo "✅ $id is valid"
+            else
+              echo "::error::OpenSpec change '$id' failed strict validation."
+              fail=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$fail"

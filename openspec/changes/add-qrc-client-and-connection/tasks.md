@@ -47,7 +47,7 @@
 
 - [x] 7.1 `Plugin/Threading/ThreadCensus.cs` — registers running plugin-owned threads. Fails loudly if more than 3 alive.
 - [x] 7.2 `Plugin/Threading/IQrcClock.cs`, `Plugin/Threading/SystemClock.cs` — production wall-clock implementation.
-- [x] 7.3 `Plugin/Threading/PluginTimer.cs` — single `Task`-driven timer thread shared by KeepaliveTimer + ReconnectStrategy.
+- [ ] 7.3 `Plugin/Threading/PluginTimer.cs` — single `Task`-driven timer thread shared by KeepaliveTimer + ReconnectStrategy. **Deferred to M3.** M2 ships `KeepaliveTimer` and `ReconnectStrategy` as standalone components driven by the single `RunSessionAsync` task on the threadpool, not a dedicated timer thread. The dedicated send/receive/timer trio lands when M3 wires the active change-group subscriptions and we know the steady-state work pattern.
 
 ## 8. TestSupport
 
@@ -65,7 +65,7 @@
 - [x] 9.5 `ConnectionManagerTests` — every state transition, IsOnline-before-NotifyOnlineStatus invariant, queue cleared on disconnect.
 - [x] 9.6 `ReconnectStrategyTests` — exact 15s interval (deterministic clock), loops until Disconnect, no thread leak.
 - [x] 9.7 `ThreadCensusTests` — registers + unregisters cleanly, breach trips guard.
-- [x] 9.8 `BasicTcpClientTransportTests` — Moq-mocked BasicTcpClient; verifies events wired correctly without invoking the stub.
+- [ ] 9.8 `BasicTcpClientTransportTests` — Moq-mocked BasicTcpClient; verifies events wired correctly without invoking the stub. (Pending — to land in the coverage-blocker fix below.)
 
 ## 10. Property tests (FsCheck)
 

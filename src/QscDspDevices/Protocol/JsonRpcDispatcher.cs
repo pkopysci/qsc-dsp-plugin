@@ -224,8 +224,14 @@ public sealed class JsonRpcDispatcher
     {
         public PendingRequest(TaskCompletionSource<JsonRpcResponse> tcs) => Tcs = tcs;
 
-        public TaskCompletionSource<JsonRpcResponse> Tcs { get; }
+        public TaskCompletionSource<JsonRpcResponse> Tcs
+        {
+            get;
+        }
 
-        public CancellationTokenRegistration Registration { get; set; }
+        public CancellationTokenRegistration Registration
+        {
+            get; set;
+        }
     }
 }

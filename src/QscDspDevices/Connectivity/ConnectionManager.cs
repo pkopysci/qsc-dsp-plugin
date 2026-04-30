@@ -38,6 +38,7 @@ public sealed class ConnectionManager : IDisposable
     private readonly IPostConnectAction _postConnect;
     private readonly CommandQueue _queue;
     private readonly JsonRpcDispatcher _dispatcher;
+    private readonly ThreadCensus _threadCensus;
 
     private readonly object _stateLock = new();
     private ConnectionState _state = ConnectionState.Disconnected;
@@ -55,6 +56,7 @@ public sealed class ConnectionManager : IDisposable
     /// <param name="queue">The command queue this manager toggles on state changes.</param>
     /// <param name="dispatcher">The dispatcher whose pending requests are cancelled on disconnect.</param>
     /// <param name="postConnect">Optional post-connect hook; defaults to a no-op.</param>
+    /// <param name="threadCensus">Optional shared thread census. Defaults to a fresh census tagged to <paramref name="deviceId"/>; pass an existing instance when multiple components (e.g. <c>QscDspTcp</c> and the manager) must share one budget.</param>
     /// <exception cref="ArgumentNullException">If any required argument is null.</exception>
     public ConnectionManager(
         string deviceId,
@@ -62,7 +64,8 @@ public sealed class ConnectionManager : IDisposable
         ReconnectStrategy reconnect,
         CommandQueue queue,
         JsonRpcDispatcher dispatcher,
-        IPostConnectAction? postConnect = null)
+        IPostConnectAction? postConnect = null,
+        ThreadCensus? threadCensus = null)
     {
         ArgumentNullException.ThrowIfNull(deviceId);
         ArgumentNullException.ThrowIfNull(transport);
@@ -76,6 +79,7 @@ public sealed class ConnectionManager : IDisposable
         _queue = queue;
         _dispatcher = dispatcher;
         _postConnect = postConnect ?? new NoopPostConnectAction();
+        _threadCensus = threadCensus ?? new ThreadCensus(deviceId);
     }
 
     /// <summary>
@@ -83,6 +87,12 @@ public sealed class ConnectionManager : IDisposable
     /// the new <see cref="ConnectionState"/>.
     /// </summary>
     public event EventHandler<GenericSingleEventArgs<ConnectionState>>? StateChanged;
+
+    /// <summary>
+    /// Gets the runtime thread-budget guard. Exposed for tests and for
+    /// future milestones that spawn additional plugin-owned threads.
+    /// </summary>
+    public ThreadCensus ThreadCensus => _threadCensus;
 
     /// <summary>Gets the current state of the connection.</summary>
     public ConnectionState State
@@ -220,6 +230,13 @@ public sealed class ConnectionManager : IDisposable
 
     private async Task RunSessionAsync(CancellationToken cancellationToken)
     {
+        // Register the session task with the thread census so the plugin
+        // honours the README §4 3-thread budget at runtime, not just by
+        // convention. The session task is M2's only plugin-owned thread;
+        // M3 will add the dedicated send / receive / timer threads and
+        // each will register with this same census instance.
+        _threadCensus.Register("session");
+
         try
         {
             while (!cancellationToken.IsCancellationRequested)
@@ -253,6 +270,7 @@ public sealed class ConnectionManager : IDisposable
         finally
         {
             FinishSession();
+            _threadCensus.Unregister();
         }
     }
 

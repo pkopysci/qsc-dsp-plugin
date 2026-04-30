@@ -52,6 +52,7 @@ namespace QscDspDevices.Plugin;
 public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, IDspLogicTriggerSupport, IRedundancySupport
 {
     private readonly IQrcClock _clock;
+    private readonly ThreadCensus _threadCensus;
 
     private CommandQueue? _queue;
     private JsonRpcDispatcher? _dispatcher;
@@ -78,6 +79,13 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     {
         ArgumentNullException.ThrowIfNull(clock);
         _clock = clock;
+
+        // Construct the thread census up-front so it is observable even
+        // before Initialize() lands a deviceId. Initialize() replaces it
+        // with one tagged to the configured deviceId so log messages
+        // attribute breaches to the right device.
+        _threadCensus = new ThreadCensus("QscDspTcp");
+
         Manufacturer = "QSC";
         Model = "Q-SYS Core";
     }
@@ -118,6 +126,14 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     public event EventHandler<GenericSingleEventArgs<string>>? BackupDeviceConnectionChanged;
 #pragma warning restore CS0067
 
+    /// <summary>
+    /// Gets the runtime guard that enforces the README §4 hard cap of
+    /// 3 plugin-owned threads. Test code uses this to assert
+    /// <see cref="ThreadCensus.AliveCount"/> in steady state and after
+    /// <see cref="Disconnect"/>.
+    /// </summary>
+    public ThreadCensus ThreadCensus => _threadCensus;
+
     /// <inheritdoc />
     public bool PrimaryDeviceActive => true;
 
@@ -153,7 +169,9 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
             transport,
             new ReconnectStrategy(_clock),
             queue,
-            dispatcher);
+            dispatcher,
+            postConnect: null,
+            threadCensus: _threadCensus);
 
         manager.StateChanged += OnStateChanged;
 

@@ -38,4 +38,11 @@
     <ProjectReference Include="..\QscDspDevices.TestSupport\QscDspDevices.TestSupport.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- xunit.runner.json is read by xunit.runner.visualstudio at test discovery time. Copy to the output dir so dotnet test picks it up. -->
+    <Content Include="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

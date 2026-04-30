@@ -139,7 +139,7 @@ public sealed class DeterministicClock : IQrcClock
             }
         }
 
-        foreach (var w in released)
+        foreach (Waiter w in released)
         {
             w.Source.TrySetResult();
         }

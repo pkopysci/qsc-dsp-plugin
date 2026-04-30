@@ -54,8 +54,14 @@ public sealed class FrameTooLargeException : Exception
     }
 
     /// <summary>Gets the configured frame-size limit, in bytes.</summary>
-    public int LimitBytes { get; }
+    public int LimitBytes
+    {
+        get;
+    }
 
     /// <summary>Gets the accumulated unframed bytes observed when the limit tripped.</summary>
-    public long AccumulatedBytes { get; }
+    public long AccumulatedBytes
+    {
+        get;
+    }
 }

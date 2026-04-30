@@ -28,6 +28,7 @@ public sealed class TestLoggerSink : IDisposable
     private bool _disposed;
 
     /// <summary>
+    /// Initializes a new instance of the <see cref="TestLoggerSink"/> class.
     /// Initializes a new sink and subscribes to <see cref="Logger.OnLog"/>.
     /// </summary>
     public TestLoggerSink()

@@ -128,7 +128,7 @@ public sealed class FakeServerEndToEndTests
             dispatcher);
 
         // Without ever calling Connect, the queue must refuse + log.
-        var ok = queue.TryEnqueue(new Protocol.JsonRpc.JsonRpcRequest { Id = 1, Method = "Component.Set" });
+        bool ok = queue.TryEnqueue(new Protocol.JsonRpc.JsonRpcRequest { Id = 1, Method = "Component.Set" });
 
         ok.Should().BeFalse();
         sink.ContainsErrorMatching("Command attempted while disconnected").Should().BeTrue();
@@ -137,7 +137,7 @@ public sealed class FakeServerEndToEndTests
 
     private static async Task WaitForStateAsync(ConnectionManager manager, ConnectionState desired, TimeSpan timeout)
     {
-        var deadline = DateTime.UtcNow + timeout;
+        DateTime deadline = DateTime.UtcNow + timeout;
         while (manager.State != desired)
         {
             if (DateTime.UtcNow > deadline)
@@ -151,7 +151,7 @@ public sealed class FakeServerEndToEndTests
 
     private static async Task WaitForStateChangeAwayFromAsync(ConnectionManager manager, ConnectionState fromState, TimeSpan timeout)
     {
-        var deadline = DateTime.UtcNow + timeout;
+        DateTime deadline = DateTime.UtcNow + timeout;
         while (manager.State == fromState)
         {
             if (DateTime.UtcNow > deadline)

@@ -25,33 +25,48 @@ public sealed class JsonRpcResponse
     /// server-originated notifications.
     /// </summary>
     [JsonProperty("id", NullValueHandling = NullValueHandling.Ignore)]
-    public long? Id { get; init; }
+    public long? Id
+    {
+        get; init;
+    }
 
     /// <summary>
     /// Gets the method name when this is a server-originated notification or
     /// AutoPoll-pushed update (e.g. <c>"EngineStatus"</c>).
     /// </summary>
     [JsonProperty("method", NullValueHandling = NullValueHandling.Ignore)]
-    public string? Method { get; init; }
+    public string? Method
+    {
+        get; init;
+    }
 
     /// <summary>
     /// Gets the server's success result. Populated when the request succeeded.
     /// </summary>
     [JsonProperty("result", NullValueHandling = NullValueHandling.Ignore)]
-    public JToken? Result { get; init; }
+    public JToken? Result
+    {
+        get; init;
+    }
 
     /// <summary>
     /// Gets the server's params block. Populated for server-originated
     /// notifications and AutoPoll pushes.
     /// </summary>
     [JsonProperty("params", NullValueHandling = NullValueHandling.Ignore)]
-    public JToken? Params { get; init; }
+    public JToken? Params
+    {
+        get; init;
+    }
 
     /// <summary>
     /// Gets the server's error envelope. Populated when the request failed.
     /// </summary>
     [JsonProperty("error", NullValueHandling = NullValueHandling.Ignore)]
-    public JsonRpcError? Error { get; init; }
+    public JsonRpcError? Error
+    {
+        get; init;
+    }
 
     /// <summary>
     /// Gets a value indicating whether this response represents a server-

@@ -24,7 +24,7 @@ public sealed class IdGeneratorTests
     public void Subsequent_calls_increase_strictly()
     {
         var sut = new IdGenerator();
-        var ids = Enumerable.Range(0, 10).Select(_ => sut.Next()).ToArray();
+        long[] ids = Enumerable.Range(0, 10).Select(_ => sut.Next()).ToArray();
         ids.Should().BeInAscendingOrder().And.OnlyHaveUniqueItems();
     }
 
@@ -36,7 +36,7 @@ public sealed class IdGeneratorTests
         const int callsPerThread = 1000;
 
         var bag = new System.Collections.Concurrent.ConcurrentBag<long>();
-        var tasks = Enumerable.Range(0, threads).Select(_ =>
+        Task[] tasks = Enumerable.Range(0, threads).Select(_ =>
             Task.Run(() =>
             {
                 for (int i = 0; i < callsPerThread; i++)

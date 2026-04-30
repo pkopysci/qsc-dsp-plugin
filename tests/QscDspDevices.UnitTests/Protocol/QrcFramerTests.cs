@@ -21,7 +21,7 @@ public sealed class QrcFramerTests
         var framer = new QrcFramer();
         byte[] input = JoinFrames("first", "second");
 
-        var frames = framer.Append(input).ToArray();
+        string[] frames = framer.Append(input).ToArray();
 
         frames.Should().Equal("first", "second");
         framer.PendingBytes.Should().Be(0);
@@ -34,8 +34,8 @@ public sealed class QrcFramerTests
         byte[] half1 = Encoding.UTF8.GetBytes("hel");
         byte[] half2 = Encoding.UTF8.GetBytes("lo").Concat(new byte[] { QrcFramer.FrameTerminator }).ToArray();
 
-        var first = framer.Append(half1).ToArray();
-        var second = framer.Append(half2).ToArray();
+        string[] first = framer.Append(half1).ToArray();
+        string[] second = framer.Append(half2).ToArray();
 
         first.Should().BeEmpty();
         second.Should().Equal("hello");
@@ -49,8 +49,8 @@ public sealed class QrcFramerTests
         byte[] read1 = JoinFrames("a", "b").Concat(Encoding.UTF8.GetBytes("partial")).ToArray();
         byte[] read2 = new byte[] { QrcFramer.FrameTerminator };
 
-        var first = framer.Append(read1).ToArray();
-        var second = framer.Append(read2).ToArray();
+        string[] first = framer.Append(read1).ToArray();
+        string[] second = framer.Append(read2).ToArray();
 
         first.Should().Equal("a", "b");
         second.Should().Equal("partial");
@@ -62,7 +62,7 @@ public sealed class QrcFramerTests
         var framer = new QrcFramer();
         byte[] input = new byte[] { QrcFramer.FrameTerminator };
 
-        var frames = framer.Append(input).ToArray();
+        string[] frames = framer.Append(input).ToArray();
 
         frames.Should().Equal(string.Empty);
     }
@@ -72,7 +72,7 @@ public sealed class QrcFramerTests
     {
         var framer = new QrcFramer();
 
-        var frames = framer.Append(ReadOnlySpan<byte>.Empty).ToArray();
+        string[] frames = framer.Append(ReadOnlySpan<byte>.Empty).ToArray();
 
         frames.Should().BeEmpty();
         framer.PendingBytes.Should().Be(0);
@@ -91,7 +91,7 @@ public sealed class QrcFramerTests
 
         input[max] = QrcFramer.FrameTerminator;
 
-        var frames = framer.Append(input).ToArray();
+        string[] frames = framer.Append(input).ToArray();
 
         frames.Should().HaveCount(1);
         frames[0].Length.Should().Be(max);
@@ -108,7 +108,7 @@ public sealed class QrcFramerTests
             input[i] = (byte)'x';
         }
 
-        var act = () => framer.Append(input).ToArray();
+        Func<string[]> act = () => framer.Append(input).ToArray();
 
         act.Should().Throw<FrameTooLargeException>()
             .Where(ex => ex.LimitBytes == max && ex.AccumulatedBytes >= max + 1);
@@ -131,7 +131,7 @@ public sealed class QrcFramerTests
         framer.PendingBytes.Should().Be(0);
 
         // After the exception, the framer should be usable again.
-        var frames = framer.Append(JoinFrames("ok")).ToArray();
+        string[] frames = framer.Append(JoinFrames("ok")).ToArray();
         frames.Should().Equal("ok");
     }
 
@@ -171,7 +171,7 @@ public sealed class QrcFramerTests
         const string original = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"NoOp\"}";
         byte[] encoded = QrcFramer.Encode(original);
 
-        var frames = framer.Append(encoded).ToArray();
+        string[] frames = framer.Append(encoded).ToArray();
 
         frames.Should().Equal(original);
     }
@@ -179,14 +179,14 @@ public sealed class QrcFramerTests
     private static byte[] JoinFrames(params string[] payloads)
     {
         int total = 0;
-        var encoded = new byte[payloads.Length][];
+        byte[][] encoded = new byte[payloads.Length][];
         for (int i = 0; i < payloads.Length; i++)
         {
             encoded[i] = Encoding.UTF8.GetBytes(payloads[i]);
             total += encoded[i].Length + 1;
         }
 
-        var result = new byte[total];
+        byte[] result = new byte[total];
         int offset = 0;
         for (int i = 0; i < encoded.Length; i++)
         {

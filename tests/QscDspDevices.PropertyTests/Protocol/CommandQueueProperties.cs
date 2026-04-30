@@ -20,6 +20,7 @@ public class CommandQueueProperties
     /// Sequential enqueue+dequeue under random N preserves the order of
     /// the request ids.
     /// </summary>
+    /// <returns></returns>
     [Property]
     public bool Sequential_FIFO_preserves_id_order(PositiveInt countWrapper)
     {
@@ -38,7 +39,7 @@ public class CommandQueueProperties
             }
         }
 
-        var dequeued = queue.SnapshotPending().Select(r => r.Id).ToArray();
+        long[] dequeued = queue.SnapshotPending().Select(r => r.Id).ToArray();
         return dequeued.SequenceEqual(enqueued);
     }
 
@@ -46,6 +47,7 @@ public class CommandQueueProperties
     /// Drain after enqueue empties the queue regardless of how many were
     /// enqueued.
     /// </summary>
+    /// <returns></returns>
     [Property]
     public bool Drain_empties_the_queue(PositiveInt countWrapper)
     {
@@ -67,6 +69,7 @@ public class CommandQueueProperties
     /// While the queue is not accepting, every enqueue returns false
     /// regardless of input.
     /// </summary>
+    /// <returns></returns>
     [Property]
     public bool Enqueue_when_not_accepting_always_returns_false(PositiveInt countWrapper)
     {

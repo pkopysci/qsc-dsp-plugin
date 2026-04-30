@@ -17,7 +17,10 @@ public sealed class JsonRpcError
 {
     /// <summary>Gets the numeric error code.</summary>
     [JsonProperty("code")]
-    public int Code { get; init; }
+    public int Code
+    {
+        get; init;
+    }
 
     /// <summary>Gets the human-readable error message.</summary>
     [JsonProperty("message")]
@@ -28,5 +31,8 @@ public sealed class JsonRpcError
     /// the shape; treat as a JSON token to be logged or surfaced verbatim.
     /// </summary>
     [JsonProperty("data", NullValueHandling = NullValueHandling.Ignore)]
-    public JToken? Data { get; init; }
+    public JToken? Data
+    {
+        get; init;
+    }
 }

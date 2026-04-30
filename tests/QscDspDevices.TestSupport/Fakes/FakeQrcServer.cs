@@ -70,7 +70,10 @@ public sealed class FakeQrcServer : IDisposable
     }
 
     /// <summary>Gets the loopback TCP port the server is listening on.</summary>
-    public int Port { get; }
+    public int Port
+    {
+        get;
+    }
 
     /// <summary>Gets the count of frames the server has received across all clients.</summary>
     public int ReceivedFrameCount => Volatile.Read(ref _receivedFrames);
@@ -94,7 +97,7 @@ public sealed class FakeQrcServer : IDisposable
     /// <summary>Closes every active client connection, simulating a network drop.</summary>
     public void DropConnection()
     {
-        foreach (var (_, client) in _clients)
+        foreach ((int _, ClientSession client) in _clients)
         {
             client.Disconnect();
         }
@@ -161,7 +164,7 @@ public sealed class FakeQrcServer : IDisposable
 
         _listener.Dispose();
 
-        foreach (var (_, client) in _clients)
+        foreach ((int _, ClientSession client) in _clients)
         {
             client.Disconnect();
         }
@@ -251,7 +254,10 @@ public sealed class FakeQrcServer : IDisposable
             _stream = client.GetStream();
         }
 
-        public bool IsLoggedOn { get; private set; }
+        public bool IsLoggedOn
+        {
+            get; private set;
+        }
 
         public async Task RunAsync()
         {
@@ -266,7 +272,7 @@ public sealed class FakeQrcServer : IDisposable
                     IsEmulator = true,
                 }).ConfigureAwait(false);
 
-                var buffer = new byte[16 * 1024];
+                byte[] buffer = new byte[16 * 1024];
                 using var pending = new MemoryStream();
                 while (!_serverCancellation.IsCancellationRequested)
                 {
@@ -363,7 +369,7 @@ public sealed class FakeQrcServer : IDisposable
             string method = request.Value<string?>("method") ?? string.Empty;
             JToken? @params = request["params"];
 
-            var failure = _server.SnapshotFailure();
+            (int DelayMs, bool MalformedNow, bool Standby) failure = _server.SnapshotFailure();
             if (failure.DelayMs > 0)
             {
                 try
@@ -431,7 +437,11 @@ public sealed class FakeQrcServer : IDisposable
 
                 case "Component.Get":
                 case "Control.Get":
-                    await SendResultAsync(id.Value, new { Name = "stub", Value = 0 }).ConfigureAwait(false);
+                    await SendResultAsync(id.Value, new
+                    {
+                        Name = "stub",
+                        Value = 0
+                    }).ConfigureAwait(false);
                     return;
 
                 case "ChangeGroup.AddControl":
@@ -441,7 +451,10 @@ public sealed class FakeQrcServer : IDisposable
                 case "ChangeGroup.Destroy":
                 case "ChangeGroup.Poll":
                 case "ChangeGroup.AutoPoll":
-                    await SendResultAsync(id.Value, new { Changes = Array.Empty<object>() }).ConfigureAwait(false);
+                    await SendResultAsync(id.Value, new
+                    {
+                        Changes = Array.Empty<object>()
+                    }).ConfigureAwait(false);
                     return;
 
                 default:
@@ -481,7 +494,11 @@ public sealed class FakeQrcServer : IDisposable
             {
                 jsonrpc = "2.0",
                 id,
-                error = new { code, message },
+                error = new
+                {
+                    code,
+                    message
+                },
             });
             return SendRawAsync(json);
         }

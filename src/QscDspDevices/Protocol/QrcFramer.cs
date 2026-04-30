@@ -105,7 +105,7 @@ public sealed class QrcFramer
         ArgumentNullException.ThrowIfNull(json);
 
         int byteCount = Encoding.UTF8.GetByteCount(json);
-        var output = new byte[byteCount + 1];
+        byte[] output = new byte[byteCount + 1];
         Encoding.UTF8.GetBytes(json, output.AsSpan(0, byteCount));
         output[byteCount] = FrameTerminator;
         return output;
@@ -187,7 +187,7 @@ public sealed class QrcFramer
             throw new FrameTooLargeException(_maxFrameBytes, observed);
         }
 
-        var dest = _buffer.GetSpan(segment.Length);
+        Span<byte> dest = _buffer.GetSpan(segment.Length);
         segment.CopyTo(dest);
         _buffer.Advance(segment.Length);
     }

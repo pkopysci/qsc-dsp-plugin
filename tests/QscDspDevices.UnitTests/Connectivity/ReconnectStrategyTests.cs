@@ -28,7 +28,7 @@ public sealed class ReconnectStrategyTests
         var clock = new DeterministicClock();
         var sut = new ReconnectStrategy(clock);
 
-        var task = sut.WaitForNextAttemptAsync(CancellationToken.None);
+        Task task = sut.WaitForNextAttemptAsync(CancellationToken.None);
         task.IsCompleted.Should().BeFalse();
 
         clock.Advance(TimeSpan.FromSeconds(14));
@@ -45,7 +45,7 @@ public sealed class ReconnectStrategyTests
         var sut = new ReconnectStrategy(clock);
         using var cts = new CancellationTokenSource();
 
-        var task = sut.WaitForNextAttemptAsync(cts.Token);
+        Task task = sut.WaitForNextAttemptAsync(cts.Token);
         await cts.CancelAsync();
 
         await FluentActions.Awaiting(async () => await task)

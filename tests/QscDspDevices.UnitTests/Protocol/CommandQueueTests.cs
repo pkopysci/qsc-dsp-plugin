@@ -23,7 +23,7 @@ public sealed class CommandQueueTests
         using var sink = new TestLoggerSink();
         using var sut = new CommandQueue("dsp-1");
 
-        var result = sut.TryEnqueue(MakeRequest(1));
+        bool result = sut.TryEnqueue(MakeRequest(1));
 
         result.Should().BeFalse();
         sut.IsAccepting.Should().BeFalse();
@@ -36,7 +36,7 @@ public sealed class CommandQueueTests
         using var sut = new CommandQueue("dsp-1");
         sut.StartAccepting();
 
-        var result = sut.TryEnqueue(MakeRequest(1));
+        bool result = sut.TryEnqueue(MakeRequest(1));
 
         result.Should().BeTrue();
         sut.IsAccepting.Should().BeTrue();
@@ -80,10 +80,10 @@ public sealed class CommandQueueTests
             sut.TryEnqueue(MakeRequest(i)).Should().BeTrue();
         }
 
-        var dequeued = new long[100];
+        long[] dequeued = new long[100];
         for (int i = 0; i < 100; i++)
         {
-            var item = await sut.DequeueAsync(CancellationToken.None);
+            JsonRpcRequest item = await sut.DequeueAsync(CancellationToken.None);
             dequeued[i] = item.Id;
         }
 
@@ -108,7 +108,7 @@ public sealed class CommandQueueTests
         sut.DroppedTotal.Should().Be(1);
         sink.ContainsWarnMatching("queue saturated").Should().BeTrue();
 
-        var first = await sut.DequeueAsync(CancellationToken.None);
+        JsonRpcRequest first = await sut.DequeueAsync(CancellationToken.None);
         first.Id.Should().Be(2);
     }
 

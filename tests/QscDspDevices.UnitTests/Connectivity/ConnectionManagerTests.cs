@@ -228,7 +228,7 @@ public sealed class ConnectionManagerTests
 
     private static async Task WaitForStateAsync(ConnectionManager manager, ConnectionState desired, int timeoutMs = 2000)
     {
-        var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
+        DateTime deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
         while (manager.State != desired)
         {
             if (DateTime.UtcNow > deadline)
@@ -242,7 +242,7 @@ public sealed class ConnectionManagerTests
 
     private static async Task WaitForConnectCountAsync(StubTransport transport, int desired, int timeoutMs = 2000)
     {
-        var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
+        DateTime deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
         while (transport.ConnectCallCount < desired)
         {
             if (DateTime.UtcNow > deadline)
@@ -256,7 +256,7 @@ public sealed class ConnectionManagerTests
 
     private static async Task WaitForClockWaitersAsync(DeterministicClock clock, int desired, int timeoutMs = 2000)
     {
-        var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
+        DateTime deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
         while (clock.PendingWaiters < desired)
         {
             if (DateTime.UtcNow > deadline)

@@ -26,7 +26,7 @@ public sealed class QrcErrorClassifierTests
     [InlineData(10, QrcErrorCode.LogonRequired)]
     public void Classify_known_codes_returns_typed_value_and_recognised_true(int numeric, QrcErrorCode expected)
     {
-        var actual = QrcErrorClassifier.Classify(numeric, out bool recognised);
+        QrcErrorCode actual = QrcErrorClassifier.Classify(numeric, out bool recognised);
 
         actual.Should().Be(expected);
         recognised.Should().BeTrue();
@@ -40,7 +40,7 @@ public sealed class QrcErrorClassifierTests
     [InlineData(-99999)]
     public void Classify_unknown_code_returns_ServerError_with_recognised_false(int numeric)
     {
-        var actual = QrcErrorClassifier.Classify(numeric, out bool recognised);
+        QrcErrorCode actual = QrcErrorClassifier.Classify(numeric, out bool recognised);
 
         actual.Should().Be(QrcErrorCode.ServerError);
         recognised.Should().BeFalse();

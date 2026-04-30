@@ -117,7 +117,7 @@ public sealed class ConnectionManager : IDisposable
             _sessionCts = new CancellationTokenSource();
         }
 
-        var token = _sessionCts.Token;
+        CancellationToken token = _sessionCts.Token;
         _sessionTask = Task.Run(() => RunSessionAsync(token), CancellationToken.None);
     }
 
@@ -163,14 +163,14 @@ public sealed class ConnectionManager : IDisposable
     /// <returns>A task that completes when the manager reaches Disconnected.</returns>
     public async Task WaitForDisconnectedAsync(TimeSpan timeout)
     {
-        var sessionTask = _sessionTask;
+        Task? sessionTask = _sessionTask;
         if (sessionTask is null)
         {
             return;
         }
 
         var deadline = Task.Delay(timeout);
-        var winner = await Task.WhenAny(sessionTask, deadline).ConfigureAwait(false);
+        Task winner = await Task.WhenAny(sessionTask, deadline).ConfigureAwait(false);
 
         if (winner == deadline && State != ConnectionState.Disconnected)
         {
@@ -220,7 +220,7 @@ public sealed class ConnectionManager : IDisposable
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                var connected = await TryOneAttemptAsync(cancellationToken).ConfigureAwait(false);
+                bool connected = await TryOneAttemptAsync(cancellationToken).ConfigureAwait(false);
                 if (connected)
                 {
                     // Stay in Connected until the transport reports a fault
@@ -277,7 +277,7 @@ public sealed class ConnectionManager : IDisposable
             return false;
         }
 
-        var winner = await Task.WhenAny(connectedTcs.Task, failedTcs.Task, AsTask(cancellationToken))
+        Task winner = await Task.WhenAny(connectedTcs.Task, failedTcs.Task, AsTask(cancellationToken))
             .ConfigureAwait(false);
 
         _transport.Connected -= onConnected;
@@ -332,7 +332,7 @@ public sealed class ConnectionManager : IDisposable
 
         try
         {
-            var winner = await Task.WhenAny(faultedTcs.Task, AsTask(cancellationToken)).ConfigureAwait(false);
+            Task winner = await Task.WhenAny(faultedTcs.Task, AsTask(cancellationToken)).ConfigureAwait(false);
 
             if (winner == faultedTcs.Task)
             {
@@ -418,7 +418,7 @@ public sealed class ConnectionManager : IDisposable
             return;
         }
 
-        var from = _state;
+        ConnectionState from = _state;
         _state = next;
         Log.Notice(_deviceId, $"Connection state {from} -> {next} ({cause}).");
 

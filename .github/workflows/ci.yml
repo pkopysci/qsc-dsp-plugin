@@ -257,6 +257,13 @@ jobs:
           fail=0
           for dir in "${dirs[@]}"; do
             id=$(basename "$dir")
+            # `openspec/changes/archive/` is a sibling directory holding
+            # already-shipped (deployed) proposals, not an active change.
+            # `openspec validate archive` would fail because there is no
+            # change called "archive" — skip it.
+            if [ "$id" = "archive" ]; then
+              continue
+            fi
             echo "::group::Validating $id"
             if npx -y "@fission-ai/openspec@${OPENSPEC_VERSION}" validate "$id" --strict; then
               echo "✅ $id is valid"

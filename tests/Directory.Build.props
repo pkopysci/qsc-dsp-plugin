@@ -1,0 +1,32 @@
+<Project>
+  <!--
+    Test-project-specific build settings. Imported automatically by every
+    .csproj under tests/ (in addition to the repo-root Directory.Build.props).
+  -->
+
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))"/>
+
+  <PropertyGroup>
+    <!-- XML doc comments are not required on tests. -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!--
+      Suppressions specific to test projects. Each must be justified.
+        SA0001 — "XML comment analysis disabled" — intentional; tests don't
+                 require doc xml.
+        SA1518 — "File required to end with single newline" — applied to
+                 MSBuild-auto-generated GlobalUsings.cs which we don't author.
+        CA1707 — "Identifiers should not contain underscores" — test method
+                 names use Should_X_When_Y for readability.
+        CA1515 — "Make types internal" — test classes are auto-discovered by
+                 xUnit and must remain public.
+        CA2007 — "Use ConfigureAwait." Pre-emptive: tests have no public
+                 async surface today (production code forbids it), but if
+                 a future test uses async helpers, xUnit's SynchronizationContext
+                 makes ConfigureAwait advice not apply. Suppressed only to
+                 keep CI clean if such tests are added later.
+    -->
+    <NoWarn>$(NoWarn);SA0001;SA1518;CA1707;CA1515;CA2007</NoWarn>
+  </PropertyGroup>
+
+</Project>

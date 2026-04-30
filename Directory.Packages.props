@@ -1,0 +1,38 @@
+<Project>
+  <!--
+    Central Package Management: every NuGet version is pinned here exactly once.
+    Project files reference packages WITHOUT a Version attribute.
+
+    Why: avoids version drift between projects, makes the compliance audit
+    trivial (one file shows every pinned version), and supports
+    reproducible builds.
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Label="Allowed third-party dependencies (per README)">
+    <!-- README §"Allowed 3rd Party NuGet Packages" -->
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageVersion Include="Crestron.SimplSharp.SDK.ProgramLibrary" Version="2.21.237" />
+  </ItemGroup>
+
+  <ItemGroup Label="Analyzers (build-time only, not shipped)">
+    <PackageVersion Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="8.0.0" />
+    <PackageVersion Include="StyleCop.Analyzers" Version="1.2.0-beta.556" />
+    <PackageVersion Include="Roslynator.Analyzers" Version="4.13.1" />
+    <PackageVersion Include="Roslynator.CodeAnalysis.Analyzers" Version="4.13.1" />
+    <PackageVersion Include="Roslynator.Formatting.Analyzers" Version="4.13.1" />
+  </ItemGroup>
+
+  <ItemGroup Label="Test-only dependencies">
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageVersion Include="xunit" Version="2.9.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageVersion Include="Moq" Version="4.20.72" />
+    <PackageVersion Include="FluentAssertions" Version="6.12.2" />
+    <PackageVersion Include="FsCheck.Xunit" Version="3.1.0" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.2" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,167 @@
+# Architecture — QscDspDevices
+
+> **Audience.** Reviewers, future maintainers, and anyone who has to
+> reason about the plugin's threading, queueing, and failover. The README
+> is the contract; this document is the implementation map. The spec
+> compliance matrix (`SPEC_COMPLIANCE.md`) is the audit trail.
+
+This document is filled out as milestones land. Empty subsections list
+the milestone that introduces them.
+
+## Layers
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Plugin                                                      │
+│  - QscDspTcp (the public root class implementing the         │
+│    framework's IDsp / IAudioRoutable / IAudioZoneEnabler /   │
+│    IDspLogicTriggerSupport / IRedundancySupport interfaces)  │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Connectivity                                                │
+│  - ConnectionManager  (state machine: Disconnected →         │
+│    Connecting → Connected; reconnect loop @ 15s)             │
+│  - RedundantCorePair  (primary + backup; switchback)         │
+│  - StateHydrator      (post-connect: rehydrate registry)     │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Backends                                                    │
+│  - QrcBackend         (primary; full feature set)            │
+│  - EcpBackend         (fallback; capability-limited)         │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Protocol                                                    │
+│  - JsonRpcFramer      (null-byte framing; UTF-8)             │
+│  - JsonRpcDispatcher  (id-correlation, AutoPoll subscription │
+│    map, server-notification routing)                         │
+│  - CommandQueue       (FIFO; cleared on disconnect)          │
+│  - ChangeGroupManager (≤ 4 groups; reserves 3 for plugin)    │
+│  - EcpFramer / EcpDispatcher (ASCII line framing)            │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Transport                                                   │
+│  - IConnectionTransport                                      │
+│  - BasicTcpClientTransport (uses gcu_common_utils.NetComs    │
+│    .BasicTcpClient — required by README §4)                  │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Domain                                                      │
+│  - InputChannel / OutputChannel / Preset / LogicTrigger /    │
+│    ZoneEnableToggle (state mirror; raises events AFTER       │
+│    update, never before)                                     │
+│  - GainScaler (0–100 ↔ device-native; injective)             │
+│  - MatrixRouter                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+## Threading model — three threads, hard cap
+
+The README §4 caps the plugin's internal threads at three. The plugin
+honours this with a fixed assignment and a runtime guard that fails
+loudly if anything spawns a fourth.
+
+| Thread | Purpose | Lifetime | Owner |
+|--------|---------|----------|-------|
+| `T1: send`    | Drains the FIFO `CommandQueue`, writes frames to the active transport | per-`QscDspTcp` instance | `Protocol/SendLoop.cs` (M2) |
+| `T2: receive` | Reads frames from the transport, dispatches by JSON-RPC id or method, fires domain events | per-`QscDspTcp` instance | `Protocol/ReceiveLoop.cs` (M2) |
+| `T3: timer`   | NoOp keepalive (every 30 s), reconnect backoff (15 s), AutoPoll sanity, redundant-core liveness | per-`QscDspTcp` instance | `Connectivity/PluginTimer.cs` (M2) |
+
+The framework calling thread is also used for synchronous public method
+bodies — these bodies **enqueue** rather than block.
+
+A `ThreadCensus` object (M2) is built into the plugin: every internal
+thread registers itself on start. Any unregistered new thread allocation
+within the plugin's `AppDomain` triggers a `Logger.Error` and a fail-fast
+guard in Debug builds (so violations are caught in tests).
+
+## Key state machines
+
+> Filled out as milestones land. Each diagram cites the spec compliance
+> row it discharges.
+
+### Connection state — M2
+
+(_to be added in M2_)
+
+### Redundant core failover — M6
+
+(_to be added in M6_)
+
+## Concurrency policy
+
+- **No `lock` held across an `event` raise.** Events fire after the
+  caller drops the relevant lock. Otherwise a subscriber that calls back
+  into the plugin would re-enter and deadlock.
+- **No `lock` held across a network I/O call.** The send loop holds no
+  domain-state lock while writing.
+- **Lock order.** Documented per-class with a `// Lock order:` comment
+  in the class header. Global order: `connection > queue > registry >
+  channel`. A stricter lock taken before a looser one is the only
+  permitted direction.
+- **Cancellation tokens.** Every internal worker accepts a
+  `CancellationToken` plumbed from the plugin's lifetime token. `Disconnect()`
+  cancels and joins; `Dispose()` cancels, joins, then cleans transport
+  resources.
+- **Volatile / Interlocked.** Hot paths (`IsOnline`, `IsInitialized`)
+  use `Volatile.Read`/`Volatile.Write` rather than `lock` to avoid
+  caller contention.
+
+## Error model
+
+Every public mutator follows the same shape:
+
+```csharp
+public void SetAudioOutputLevel(string id, int level)
+{
+    try
+    {
+        // 1. Argument validation via gcu_common_utils.Validation.ParameterValidator
+        // 2. Look up channel (return + log Warn if missing)
+        // 3. Enqueue command (return + log Error if disconnected)
+    }
+    catch (Exception ex)
+    {
+        // Never let an exception cross the plugin boundary.
+        Logger.Error(LogServiceTypes.Hardware, LogDeviceTypes.Dsp, Id,
+                     $"{nameof(SetAudioOutputLevel)} failed: {ex.Message}");
+    }
+}
+```
+
+QRC error codes round-trip to a typed `enum QrcErrorCode`. Every code is
+mapped explicitly; an unknown code logs `Logger.Warn` and is treated as
+`ServerError`.
+
+## Build, package, and ship layout
+
+- Single shipped DLL: `QscDspDevices.dll` from `src/QscDspDevices/`.
+- Stub assembly `FrameworkStubs.dll` is **never shipped**
+  (`<IsPackable>false</IsPackable>`).
+- Test assemblies are never shipped.
+- Crestron SDK, Newtonsoft.Json are runtime-pulled by the framework
+  host; the plugin assumes they are already present in the AppDomain
+  per the AV Framework's plugin loader contract.
+
+## What we deliberately do NOT do
+
+- **No `Task`/`async` on the public API.** The plugin presents synchronous
+  methods; long work is queued and confirmed via events.
+- **No DI container internally.** Constructor injection of explicit
+  collaborators is used; `Microsoft.Extensions.DependencyInjection` is
+  not pulled in (would inflate the DLL).
+- **No `System.Reactive`.** Events are plain `EventHandler<T>` for
+  framework compatibility.
+- **No JSON deserialization without bounds.** Frames over 16 MiB are
+  rejected with a fatal log; the read buffer is bounded.
+- **No swallowed exceptions.** Every catch logs and either returns a
+  documented fallback or rethrows internally to a top-level handler.

@@ -232,10 +232,13 @@ public sealed class ConnectionManager : IDisposable
     {
         // Register the session task with the thread census so the plugin
         // honours the README §4 3-thread budget at runtime, not just by
-        // convention. The session task is M2's only plugin-owned thread;
-        // M3 will add the dedicated send / receive / timer threads and
-        // each will register with this same census instance.
-        _threadCensus.Register("session");
+        // convention. The token-based API is essential here because this
+        // method awaits across threadpool worker boundaries — keying on
+        // Environment.CurrentManagedThreadId would Unregister the wrong
+        // id when the continuation resumes on a different thread.
+        // M3 adds dedicated send/receive/timer threads, each carrying
+        // their own registration handle on this same census.
+        ThreadCensusRegistration registration = _threadCensus.Register("session");
 
         try
         {
@@ -270,7 +273,7 @@ public sealed class ConnectionManager : IDisposable
         finally
         {
             FinishSession();
-            _threadCensus.Unregister();
+            registration.Dispose();
         }
     }
 

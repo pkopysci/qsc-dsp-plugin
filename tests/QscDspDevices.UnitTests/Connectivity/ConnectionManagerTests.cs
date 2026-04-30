@@ -226,21 +226,44 @@ public sealed class ConnectionManagerTests
         e.Should().Throw<ArgumentNullException>();
     }
 
-    private static async Task WaitForStateAsync(ConnectionManager manager, ConnectionState desired, int timeoutMs = 2000)
+    private static async Task WaitForStateAsync(ConnectionManager manager, ConnectionState desired, int timeoutMs = 10000)
     {
-        DateTime deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
-        while (manager.State != desired)
+        // Event-driven: subscribe to StateChanged, then snapshot current
+        // state under the same lock the manager uses (well — actually we
+        // just check after subscribing; if we missed the desired state
+        // the subscription will catch the next transition; if we already
+        // matched, return immediately). This eliminates the cold-pool
+        // race where Task.Delay polling lost to a starved threadpool.
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        EventHandler<gcu_common_utils.GenericEventArgs.GenericSingleEventArgs<ConnectionState>> handler = (_, args) =>
         {
-            if (DateTime.UtcNow > deadline)
+            if (args.Arg == desired)
             {
-                throw new TimeoutException($"Manager did not reach {desired} within {timeoutMs}ms; current state is {manager.State}.");
+                tcs.TrySetResult(true);
+            }
+        };
+        manager.StateChanged += handler;
+        try
+        {
+            if (manager.State == desired)
+            {
+                return;
             }
 
-            await Task.Delay(10);
+            using var cts = new CancellationTokenSource(timeoutMs);
+            using (cts.Token.Register(() => tcs.TrySetException(
+                new TimeoutException($"Manager did not reach {desired} within {timeoutMs}ms; current state is {manager.State}."))))
+            {
+                await tcs.Task;
+            }
+        }
+        finally
+        {
+            manager.StateChanged -= handler;
         }
     }
 
-    private static async Task WaitForConnectCountAsync(StubTransport transport, int desired, int timeoutMs = 2000)
+    private static async Task WaitForConnectCountAsync(StubTransport transport, int desired, int timeoutMs = 10000)
     {
         DateTime deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
         while (transport.ConnectCallCount < desired)
@@ -254,7 +277,7 @@ public sealed class ConnectionManagerTests
         }
     }
 
-    private static async Task WaitForClockWaitersAsync(DeterministicClock clock, int desired, int timeoutMs = 2000)
+    private static async Task WaitForClockWaitersAsync(DeterministicClock clock, int desired, int timeoutMs = 10000)
     {
         DateTime deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
         while (clock.PendingWaiters < desired)

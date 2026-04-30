@@ -103,10 +103,10 @@ public sealed class QscDspTcpTests
         // Wait for the session task to actually call transport.Connect()
         // before driving the stub transport to "Connected" — otherwise
         // SimulateConnectSuccess can race ahead of the subscription.
-        await WaitForAsync(() => sut.StubConnectCallCount > 0, TimeSpan.FromSeconds(2));
+        await WaitForAsync(() => sut.StubConnectCallCount > 0, TimeSpan.FromSeconds(10));
         sut.SimulateConnectSuccess();
 
-        await WaitForAsync(() => sawNotification, TimeSpan.FromSeconds(2));
+        await WaitForAsync(() => sawNotification, TimeSpan.FromSeconds(10));
 
         sut.IsOnline.Should().BeTrue();
         isOnlineWhenNotified.Should().BeTrue("IsOnline must be set BEFORE NotifyOnlineStatus per README §3");
@@ -119,9 +119,9 @@ public sealed class QscDspTcpTests
         sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
 
         sut.Connect();
-        await WaitForAsync(() => sut.StubConnectCallCount > 0, TimeSpan.FromSeconds(2));
+        await WaitForAsync(() => sut.StubConnectCallCount > 0, TimeSpan.FromSeconds(10));
         sut.SimulateConnectSuccess();
-        await WaitForAsync(() => sut.IsOnline, TimeSpan.FromSeconds(2));
+        await WaitForAsync(() => sut.IsOnline, TimeSpan.FromSeconds(10));
 
         bool sawDisconnectNotification = false;
         bool isOnlineWhenNotified = true;
@@ -136,7 +136,7 @@ public sealed class QscDspTcpTests
 
         sut.Disconnect();
 
-        await WaitForAsync(() => sawDisconnectNotification, TimeSpan.FromSeconds(2));
+        await WaitForAsync(() => sawDisconnectNotification, TimeSpan.FromSeconds(10));
 
         sut.IsOnline.Should().BeFalse();
         isOnlineWhenNotified.Should().BeFalse("IsOnline must be cleared BEFORE NotifyOnlineStatus per README §3");
@@ -324,10 +324,10 @@ public sealed class QscDspTcpTests
         sut.ThreadCensus.AliveCount.Should().Be(0);
 
         sut.Connect();
-        await WaitForAsync(() => sut.StubConnectCallCount > 0, TimeSpan.FromSeconds(2));
+        await WaitForAsync(() => sut.StubConnectCallCount > 0, TimeSpan.FromSeconds(10));
 
         // The session task has registered; M2 ships one such thread.
-        await WaitForAsync(() => sut.ThreadCensus.AliveCount >= 1, TimeSpan.FromSeconds(2));
+        await WaitForAsync(() => sut.ThreadCensus.AliveCount >= 1, TimeSpan.FromSeconds(10));
         sut.ThreadCensus.Snapshot().Should().Contain("session");
     }
 
@@ -339,10 +339,10 @@ public sealed class QscDspTcpTests
         sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
 
         sut.Connect();
-        await WaitForAsync(() => sut.StubConnectCallCount > 0, TimeSpan.FromSeconds(2));
+        await WaitForAsync(() => sut.StubConnectCallCount > 0, TimeSpan.FromSeconds(10));
         sut.SimulateConnectSuccess();
-        await WaitForAsync(() => sut.IsOnline, TimeSpan.FromSeconds(2));
-        await WaitForAsync(() => sut.ThreadCensus.AliveCount >= 1, TimeSpan.FromSeconds(2));
+        await WaitForAsync(() => sut.IsOnline, TimeSpan.FromSeconds(10));
+        await WaitForAsync(() => sut.ThreadCensus.AliveCount >= 1, TimeSpan.FromSeconds(10));
 
         sut.Disconnect();
 

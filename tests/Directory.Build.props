@@ -25,8 +25,13 @@
                  a future test uses async helpers, xUnit's SynchronizationContext
                  makes ConfigureAwait advice not apply. Suppressed only to
                  keep CI clean if such tests are added later.
+        CA1031 — "Do not catch general exception types." Test infrastructure
+                 (RawTcpTransport, FakeQrcServer) catches all exceptions
+                 on shutdown / cleanup paths because there is no recovery
+                 to attempt — the test is tearing down. Production code
+                 in src/ does not get this suppression.
     -->
-    <NoWarn>$(NoWarn);SA0001;SA1518;CA1707;CA1515;CA2007</NoWarn>
+    <NoWarn>$(NoWarn);SA0001;SA1518;CA1707;CA1515;CA2007;CA1031</NoWarn>
   </PropertyGroup>
 
 </Project>

@@ -166,55 +166,42 @@ public sealed class CommandQueue : IDisposable
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // Single-lock path: the entire accept-check + write-or-drop is
+        // observed atomically. The slightly higher contention is
+        // acceptable for QRC's command rates (hundreds per second peak)
+        // and prevents the prior race where a concurrent fast-path
+        // producer could steal the freed slot during a saturation drop.
         lock (_stateLock)
         {
-            if (_disposed || !_accepting)
+            if (_disposed)
+            {
+                Log.Error(_deviceId, $"Command attempted on disposed queue: method={request.Method} id={request.Id}");
+                return false;
+            }
+
+            if (!_accepting)
             {
                 Log.Error(_deviceId, $"Command attempted while disconnected: method={request.Method} id={request.Id}");
                 return false;
             }
-        }
-
-        // Fast path: the channel has room.
-        if (_channel.Writer.TryWrite(request))
-        {
-            return true;
-        }
-
-        // Slow path: saturated. Drop the oldest, enqueue the new one,
-        // and log a Warn. We do this under the state lock so the drop +
-        // enqueue is observed atomically by Drain() callers.
-        lock (_stateLock)
-        {
-            if (_disposed || !_accepting)
-            {
-                Log.Error(_deviceId, $"Command attempted while disconnected: method={request.Method} id={request.Id}");
-                return false;
-            }
-
-            if (!_channel.Reader.TryRead(out _))
-            {
-                // Race: the reader emptied us between our TryWrite and the
-                // saturation drop. Try one more write; if it still fails,
-                // bail out.
-                if (_channel.Writer.TryWrite(request))
-                {
-                    return true;
-                }
-
-                Log.Warn(_deviceId, $"Command queue saturated; could not enqueue method={request.Method} id={request.Id}");
-                return false;
-            }
-
-            Interlocked.Increment(ref _droppedTotal);
 
             if (_channel.Writer.TryWrite(request))
             {
-                Log.Warn(_deviceId, $"Command queue saturated; oldest command dropped to make room for method={request.Method} id={request.Id}");
                 return true;
             }
 
-            Log.Warn(_deviceId, $"Command queue saturated and unable to enqueue even after dropping oldest; method={request.Method} id={request.Id}");
+            // Saturated: drop the oldest and try once more.
+            if (_channel.Reader.TryRead(out _))
+            {
+                Interlocked.Increment(ref _droppedTotal);
+                if (_channel.Writer.TryWrite(request))
+                {
+                    Log.Warn(_deviceId, $"Command queue saturated; oldest command dropped to make room for method={request.Method} id={request.Id}");
+                    return true;
+                }
+            }
+
+            Log.Warn(_deviceId, $"Command queue saturated and unable to enqueue method={request.Method} id={request.Id}");
             return false;
         }
     }

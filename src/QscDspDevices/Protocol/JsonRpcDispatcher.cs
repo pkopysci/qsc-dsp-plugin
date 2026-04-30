@@ -1,6 +1,7 @@
 // Copyright (c) 2026 QscDspDevices Contributors. Licensed under MIT.
 
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using gcu_common_utils.GenericEventArgs;
@@ -44,7 +45,7 @@ public sealed class JsonRpcDispatcher
     };
 
     private readonly string _deviceId;
-    private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonRpcResponse>> _pending = new();
+    private readonly ConcurrentDictionary<long, PendingRequest> _pending = new();
     private readonly ConcurrentDictionary<long, IAutoPollSubscription> _autoPolls = new();
 
     /// <summary>
@@ -76,18 +77,31 @@ public sealed class JsonRpcDispatcher
     public Task<JsonRpcResponse> RegisterPending(long id, CancellationToken cancellationToken)
     {
         var tcs = new TaskCompletionSource<JsonRpcResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
-        if (!_pending.TryAdd(id, tcs))
+        var pending = new PendingRequest(tcs);
+
+        if (!_pending.TryAdd(id, pending))
         {
             throw new InvalidOperationException($"Request id {id} is already registered.");
         }
 
-        cancellationToken.Register(() =>
+        // Only register a cancellation hook when the token can actually
+        // cancel — saves an allocation per request for the common
+        // CancellationToken.None case. Store the registration on the
+        // PendingRequest so it can be disposed on completion as well as
+        // on cancel; otherwise long-lived linked tokens leak one CTR
+        // per RPC call (M3+ session token + hundreds-per-second AutoPoll
+        // pushes would compound).
+        if (cancellationToken.CanBeCanceled)
         {
-            if (_pending.TryRemove(id, out TaskCompletionSource<JsonRpcResponse>? captured))
+            pending.Registration = cancellationToken.Register(() =>
             {
-                captured.TrySetCanceled(cancellationToken);
-            }
-        });
+                if (_pending.TryRemove(id, out PendingRequest? captured))
+                {
+                    captured.Tcs.TrySetCanceled(cancellationToken);
+                    captured.Registration.Dispose();
+                }
+            });
+        }
 
         return tcs.Task;
     }
@@ -174,9 +188,10 @@ public sealed class JsonRpcDispatcher
         }
 
         // One-shot pending response.
-        if (_pending.TryRemove(id, out TaskCompletionSource<JsonRpcResponse>? tcs))
+        if (_pending.TryRemove(id, out PendingRequest? pending))
         {
-            tcs.TrySetResult(message);
+            pending.Tcs.TrySetResult(message);
+            pending.Registration.Dispose();
             return;
         }
 
@@ -191,12 +206,26 @@ public sealed class JsonRpcDispatcher
     /// <param name="reason">The reason to surface as the cancellation message.</param>
     public void CancelAllPending(string reason)
     {
-        foreach ((long id, TaskCompletionSource<JsonRpcResponse> tcs) in _pending)
+        // Snapshot the keys so we don't mutate the collection while
+        // enumerating it (ConcurrentDictionary tolerates this, but a
+        // snapshot is clearer to a co-reviewer).
+        long[] ids = _pending.Keys.ToArray();
+        foreach (long id in ids)
         {
-            if (_pending.TryRemove(id, out _))
+            if (_pending.TryRemove(id, out PendingRequest? pending))
             {
-                tcs.TrySetException(new OperationCanceledException(reason));
+                pending.Tcs.TrySetException(new OperationCanceledException(reason));
+                pending.Registration.Dispose();
             }
         }
+    }
+
+    private sealed class PendingRequest
+    {
+        public PendingRequest(TaskCompletionSource<JsonRpcResponse> tcs) => Tcs = tcs;
+
+        public TaskCompletionSource<JsonRpcResponse> Tcs { get; }
+
+        public CancellationTokenRegistration Registration { get; set; }
     }
 }

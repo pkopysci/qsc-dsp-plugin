@@ -60,4 +60,4 @@
 ## 7. Validation
 
 - [x] 7.1 `openspec validate add-project-foundation --strict` passes.
-- [ ] 7.2 `qsc-critic` subagent reviews the foundation; findings logged. (Pending — to run after this milestone is committed.)
+- [x] 7.2 `qsc-critic` subagent reviewed the foundation; findings logged at `REVIEW.md` in this folder. 3 blockers + 13 concerns + 6 nits identified — all 3 blockers and all 13 concerns addressed before merge; nits accepted and noted.

@@ -142,9 +142,13 @@ public sealed class ConnectionManager : IDisposable
             }
 
             _userRequestedDisconnect = true;
-            TransitionLocked(ConnectionState.Disconnecting, "user requested Disconnect()");
             toCancel = _sessionCts;
         }
+
+        // Fire the Disconnecting transition AFTER releasing the lock so
+        // the event raise is synchronous (matching TransitionTo's shape)
+        // and observers cannot see Disconnected before Disconnecting.
+        TransitionTo(ConnectionState.Disconnecting, "user requested Disconnect()");
 
         try
         {
@@ -408,23 +412,5 @@ public sealed class ConnectionManager : IDisposable
             Log.Notice(_deviceId, $"Connection state {from} -> {next} ({cause}).");
             StateChanged?.Invoke(this, new GenericSingleEventArgs<ConnectionState>(next));
         }
-    }
-
-    private void TransitionLocked(ConnectionState next, string cause)
-    {
-        // Caller already holds _stateLock.
-        if (_state == next)
-        {
-            return;
-        }
-
-        ConnectionState from = _state;
-        _state = next;
-        Log.Notice(_deviceId, $"Connection state {from} -> {next} ({cause}).");
-
-        // Fire the event outside the lock to avoid re-entrancy from
-        // subscribers (they should not hold the lock).
-        var args = new GenericSingleEventArgs<ConnectionState>(next);
-        ThreadPool.QueueUserWorkItem(_ => StateChanged?.Invoke(this, args));
     }
 }

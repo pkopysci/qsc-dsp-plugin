@@ -111,10 +111,10 @@ public sealed class BasicTcpClientTransport : IConnectionTransport
         _client.ConnectionFailed -= OnConnectionFailed;
         _client.RxBytesReceived -= OnRxBytesReceived;
 
-        Connected = null;
-        ConnectionFailed = null;
-        RxReceived = null;
-
+        // Note: do NOT clear Connected/ConnectionFailed/RxReceived to null.
+        // The unsubscribes above remove our internal handlers. Setting the
+        // public events to null does not free subscribers' references; it
+        // only changes our local view, and is confusing to readers.
         _client.Dispose();
     }
 

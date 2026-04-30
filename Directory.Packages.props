@@ -19,7 +19,11 @@
   </ItemGroup>
 
   <ItemGroup Label="Analyzers (build-time only, not shipped)">
-    <PackageVersion Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="8.0.0" />
+    <!--
+      Microsoft.CodeAnalysis.NetAnalyzers is provided by the SDK itself;
+      see Directory.Build.props for the rationale on why we do NOT pin
+      it as a NuGet package.
+    -->
     <PackageVersion Include="StyleCop.Analyzers" Version="1.2.0-beta.556" />
     <PackageVersion Include="Roslynator.Analyzers" Version="4.13.1" />
     <PackageVersion Include="Roslynator.CodeAnalysis.Analyzers" Version="4.13.1" />

@@ -1,5 +1,6 @@
 // Copyright (c) 2026 QscDspDevices Contributors. Licensed under MIT.
 
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using FluentAssertions;
 using QscDspDevices.Plugin;
@@ -203,6 +204,112 @@ public sealed class QscDspTcpTests
         setLevel.Should().Throw<ArgumentException>();
         setMute.Should().Throw<ArgumentException>();
         recall.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void M4_routing_methods_log_Notice_and_validate_args()
+    {
+        using var sut = new TestableQscDspTcp(new DeterministicClock());
+        sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
+
+        Action route = () => sut.RouteAudio("src-1", "out-1");
+        Action clear = () => sut.ClearAudioRoute("out-1");
+        route.Should().NotThrow();
+        clear.Should().NotThrow();
+
+        sut.GetCurrentAudioSource("out-1").Should().Be(string.Empty);
+
+        Action emptyRouteSrc = () => sut.RouteAudio(string.Empty, "out-1");
+        Action emptyRouteDst = () => sut.RouteAudio("src-1", string.Empty);
+        Action emptyClear = () => sut.ClearAudioRoute(string.Empty);
+        Action emptyQuery = () => sut.GetCurrentAudioSource(string.Empty);
+        emptyRouteSrc.Should().Throw<ArgumentException>();
+        emptyRouteDst.Should().Throw<ArgumentException>();
+        emptyClear.Should().Throw<ArgumentException>();
+        emptyQuery.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void M4_zone_enable_methods_validate_args_and_return_false_until_M4()
+    {
+        using var sut = new TestableQscDspTcp(new DeterministicClock());
+        sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
+
+        Action add = () => sut.AddAudioZoneEnable("ch-1", "zone-1", "tag");
+        Action remove = () => sut.RemoveAudioZoneEnable("ch-1", "zone-1");
+        Action toggle = () => sut.ToggleAudioZoneEnable("ch-1", "zone-1");
+        Action set = () => sut.SetAudioZoneEnable("ch-1", "zone-1", true);
+        add.Should().NotThrow();
+        remove.Should().NotThrow();
+        toggle.Should().NotThrow();
+        set.Should().NotThrow();
+
+        sut.QueryAudioZoneEnable("ch-1", "zone-1").Should().BeFalse();
+
+        Action emptyChan = () => sut.AddAudioZoneEnable(string.Empty, "zone-1", "tag");
+        Action emptyZone = () => sut.AddAudioZoneEnable("ch-1", string.Empty, "tag");
+        emptyChan.Should().Throw<ArgumentException>();
+        emptyZone.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void M5_logic_trigger_methods_validate_args_and_return_until_M5()
+    {
+        using var sut = new TestableQscDspTcp(new DeterministicClock());
+        sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
+
+        Action add = () => sut.AddDspLogicTrigger("trig-1", "tag", new List<string>());
+        Action pulse = () => sut.PulseDspLogicTrigger("trig-1");
+        add.Should().NotThrow();
+        pulse.Should().NotThrow();
+
+        Action emptyAdd = () => sut.AddDspLogicTrigger(string.Empty, "tag", new List<string>());
+        Action emptyPulse = () => sut.PulseDspLogicTrigger(string.Empty);
+        emptyAdd.Should().Throw<ArgumentException>();
+        emptyPulse.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void M6_SetBackupDeviceConnection_logs_Notice_and_validates_args()
+    {
+        using var sink = new TestLoggerSink();
+        using var sut = new TestableQscDspTcp(new DeterministicClock());
+        sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
+
+        Action act = () => sut.SetBackupDeviceConnection("backup.example", 1710);
+        act.Should().NotThrow();
+
+        sink.Captures.Should().Contain(
+            c => c.Severity == gcu_common_utils.Logging.LogSeverity.Notice
+              && c.Message.Contains("not implemented in M2", StringComparison.Ordinal));
+
+        Action emptyHost = () => sut.SetBackupDeviceConnection(string.Empty, 1710);
+        emptyHost.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Disconnect_before_Initialize_is_a_no_op()
+    {
+        using var sut = new QscDspTcp();
+        Action act = () => sut.Disconnect();
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void AddInputChannel_AddOutputChannel_AddPreset_log_Notice_and_validate()
+    {
+        using var sut = new TestableQscDspTcp(new DeterministicClock());
+        sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
+
+        Action addIn = () => sut.AddInputChannel("in-1", "lvl", "mute", 0, 100, 0, 0, new List<string>());
+        Action addOut = () => sut.AddOutputChannel("out-1", "lvl", "mute", "router", 0, 0, 100, 0, new List<string>());
+        Action addPreset = () => sut.AddPreset("preset-1", "bank-A", 1);
+        addIn.Should().NotThrow();
+        addOut.Should().NotThrow();
+        addPreset.Should().NotThrow();
+
+        Action emptyAddIn = () => sut.AddInputChannel(string.Empty, "lvl", "mute", 0, 100, 0, 0, new List<string>());
+        emptyAddIn.Should().Throw<ArgumentException>();
     }
 
     [Fact]

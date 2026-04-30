@@ -79,8 +79,15 @@ public class BasicTcpClient : IDisposable
         get;
     }
 
-    public bool Connected => throw new NotImplementedException(
-        "FrameworkStubs.BasicTcpClient.Connected — replace stub with real gcu-common-utils package.");
+    // Stub returns false (the documented "not connected" state) instead
+    // of throwing NotImplementedException. Production wrappers (notably
+    // BasicTcpClientTransport.IsConnected / Send) read this getter freely
+    // and would otherwise crash any test that exercises those paths.
+    // The real implementation returns true after a successful Connect();
+    // since the stub's Connect() throws, the wrapper code has no way to
+    // observe the post-connect state, so "always false" is correct for
+    // any test scenario that doesn't reach the throwing methods.
+    public bool Connected => false;
 
     public bool EnableReconnect
     {

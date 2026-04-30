@@ -10,10 +10,17 @@ namespace QscDspDevices.Protocol;
 /// </summary>
 public sealed class FrameTooLargeException : Exception
 {
+    // The three constructors below exist purely to satisfy CA1032
+    // ("Implement standard exception constructors"). The plugin never
+    // throws the exception via these forms — only the (int, long)
+    // overload is meaningful. Excluded from coverage so the 90% gate
+    // tracks behaviour, not BCL-mandated ceremony.
+
     /// <summary>
     /// Initializes a new instance of the <see cref="FrameTooLargeException"/> class
     /// with default values (limit zero, accumulated zero).
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     public FrameTooLargeException()
     {
     }
@@ -23,6 +30,7 @@ public sealed class FrameTooLargeException : Exception
     /// with the supplied message.
     /// </summary>
     /// <param name="message">The diagnostic message.</param>
+    [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     public FrameTooLargeException(string message)
         : base(message)
     {
@@ -34,6 +42,7 @@ public sealed class FrameTooLargeException : Exception
     /// </summary>
     /// <param name="message">The diagnostic message.</param>
     /// <param name="innerException">The inner exception, if any.</param>
+    [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     public FrameTooLargeException(string message, Exception innerException)
         : base(message, innerException)
     {

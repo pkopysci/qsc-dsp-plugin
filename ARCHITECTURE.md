@@ -64,25 +64,44 @@ the milestone that introduces them.
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## Threading model — three threads, hard cap
+## Threading model — three-thread cap, evolved across milestones
 
-The README §4 caps the plugin's internal threads at three. The plugin
-honours this with a fixed assignment and a runtime guard that fails
-loudly if anything spawns a fourth.
+The README §4 caps the plugin's internal threads at three. Each
+milestone tightens the layout of those threads as the work that needs
+threading is implemented.
 
-| Thread | Purpose | Lifetime | Owner |
+### M2 (shipped)
+
+M2's only long-running plugin work is the connection lifecycle. The
+plugin spins up exactly **one** background `Task` per session, scheduled
+on the .NET thread-pool:
+
+| Component | Where it runs | Lifetime |
+|-----------|---------------|----------|
+| `ConnectionManager.RunSessionAsync` | thread-pool task started by `Connect()` | one per session (joined on `Disconnect()` / `Dispose()`) |
+| `ReconnectStrategy.WaitForNextAttemptAsync` | inline within the session task | until success or cancellation |
+| `KeepaliveTimer.TickAsync` | not yet wired to any external pump in M2; standalone, exercised only by tests | n/a until M3 |
+| Public method bodies (`QscDspTcp.Connect`/`Disconnect`/M3-stub mutators) | framework calling thread | synchronous |
+
+`ThreadCensus` (`Plugin/Threading/ThreadCensus.cs`) is shipped and unit-
+tested but is also wired into the session task, so any production code
+path that spawns a plugin-owned thread participates in the budget. The
+guard logs `Logger.Error` "thread budget breached" and (in DEBUG only)
+calls `Environment.FailFast` if a 4th thread registers while three are
+alive.
+
+### M3 (planned)
+
+M3 introduces dedicated **send / receive / timer** threads matching the
+canonical layout below, alongside the active change-group subscriptions
+that drive the steady-state work pattern. The M3 design.md will document
+the migration; the `ThreadCensus` instance survives as-is.
+
+| Thread | Purpose | Lifetime | Owner (M3+) |
 |--------|---------|----------|-------|
-| `T1: send`    | Drains the FIFO `CommandQueue`, writes frames to the active transport | per-`QscDspTcp` instance | `Protocol/SendLoop.cs` (M2) |
-| `T2: receive` | Reads frames from the transport, dispatches by JSON-RPC id or method, fires domain events | per-`QscDspTcp` instance | `Protocol/ReceiveLoop.cs` (M2) |
-| `T3: timer`   | NoOp keepalive (every 30 s), reconnect backoff (15 s), AutoPoll sanity, redundant-core liveness | per-`QscDspTcp` instance | `Connectivity/PluginTimer.cs` (M2) |
-
-The framework calling thread is also used for synchronous public method
-bodies — these bodies **enqueue** rather than block.
-
-A `ThreadCensus` object (M2) is built into the plugin: every internal
-thread registers itself on start. Any unregistered new thread allocation
-within the plugin's `AppDomain` triggers a `Logger.Error` and a fail-fast
-guard in Debug builds (so violations are caught in tests).
+| `T1: send`    | Drains the FIFO `CommandQueue`, writes frames to the active transport | per session | `Protocol/SendLoop.cs` |
+| `T2: receive` | Reads frames from the transport, dispatches by JSON-RPC id or method, fires domain events | per session | `Protocol/ReceiveLoop.cs` |
+| `T3: timer`   | NoOp keepalive (every 30 s), reconnect backoff (15 s), AutoPoll sanity, redundant-core liveness | per session | `Connectivity/PluginTimer.cs` |
 
 ## Key state machines
 

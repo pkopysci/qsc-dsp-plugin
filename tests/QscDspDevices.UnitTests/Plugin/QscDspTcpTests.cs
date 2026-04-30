@@ -206,6 +206,49 @@ public sealed class QscDspTcpTests
     }
 
     [Fact]
+    public async Task ThreadCensus_reports_one_plugin_thread_when_session_is_active()
+    {
+        // Per the threading-budget spec: a Connected plugin reports plugin
+        // threads alive (M2 ships exactly one — the session task; M3 will
+        // grow this to three). This test pins the M2 behaviour: the
+        // session task DOES register with the census.
+        using var sut = new TestableQscDspTcp(new DeterministicClock());
+        sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
+        sut.ThreadCensus.AliveCount.Should().Be(0);
+
+        sut.Connect();
+        await WaitForAsync(() => sut.StubConnectCallCount > 0, TimeSpan.FromSeconds(2));
+
+        // The session task has registered; M2 ships one such thread.
+        await WaitForAsync(() => sut.ThreadCensus.AliveCount >= 1, TimeSpan.FromSeconds(2));
+        sut.ThreadCensus.Snapshot().Should().Contain("session");
+    }
+
+    [Fact]
+    public async Task Disconnect_releases_the_session_thread_back_to_zero()
+    {
+        // Spec scenario: "Disconnected plugin reports 0 plugin threads."
+        using var sut = new TestableQscDspTcp(new DeterministicClock());
+        sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
+
+        sut.Connect();
+        await WaitForAsync(() => sut.StubConnectCallCount > 0, TimeSpan.FromSeconds(2));
+        sut.SimulateConnectSuccess();
+        await WaitForAsync(() => sut.IsOnline, TimeSpan.FromSeconds(2));
+        await WaitForAsync(() => sut.ThreadCensus.AliveCount >= 1, TimeSpan.FromSeconds(2));
+
+        sut.Disconnect();
+
+        // Disposing forces a join on the session task, which guarantees
+        // the finally-block (Unregister) has run before we observe the
+        // count. Asserting AliveCount mid-cooperative-cancellation is
+        // racy; Dispose is the synchronous join point.
+        sut.Dispose();
+        sut.ThreadCensus.AliveCount.Should().Be(0);
+        sut.IsOnline.Should().BeFalse();
+    }
+
+    [Fact]
     public void IRedundancySupport_properties_default_to_no_backup()
     {
         using var sut = new QscDspTcp();

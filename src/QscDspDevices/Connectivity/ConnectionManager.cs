@@ -339,6 +339,13 @@ public sealed class ConnectionManager : IDisposable
                 string reason = await faultedTcs.Task.ConfigureAwait(false);
                 Log.Notice(_deviceId, $"Connection lost: {reason}");
                 CleanupAfterDisconnect();
+
+                // Transition out of Connected immediately so observers
+                // (notably BaseDevice.IsOnline + NotifyOnlineStatus) see
+                // the disconnect right away, not 15 seconds later when
+                // we attempt to reconnect. The retry loop in the session
+                // will then transition us back through Connecting.
+                TransitionTo(ConnectionState.Disconnected, "transport reported a fault");
             }
         }
         finally

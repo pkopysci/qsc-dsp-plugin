@@ -30,8 +30,11 @@
                  on shutdown / cleanup paths because there is no recovery
                  to attempt — the test is tearing down. Production code
                  in src/ does not get this suppression.
+        CA1062 — "Validate args" — FsCheck-generated wrappers (NonNull,
+                 PositiveInt, etc.) are framework-validated; the analyzer
+                 doesn't know the guarantee. Production code keeps the rule.
     -->
-    <NoWarn>$(NoWarn);SA0001;SA1518;CA1707;CA1515;CA2007;CA1031</NoWarn>
+    <NoWarn>$(NoWarn);SA0001;SA1518;CA1707;CA1515;CA2007;CA1031;CA1062</NoWarn>
   </PropertyGroup>
 
 </Project>

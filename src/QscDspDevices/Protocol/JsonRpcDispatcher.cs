@@ -27,6 +27,22 @@ namespace QscDspDevices.Protocol;
 /// </remarks>
 public sealed class JsonRpcDispatcher
 {
+    /// <summary>
+    /// The maximum JSON nesting depth accepted on inbound frames. Set
+    /// explicitly here rather than relying on Newtonsoft.Json's default
+    /// (currently 64) so a transitive-dependency change cannot relax it
+    /// behind our backs. Real Q-SYS payloads do not approach this limit
+    /// (a typical Component.Set is depth 4-6); 32 leaves head-room for
+    /// pathological-but-legal Designer designs while bounding worst-case
+    /// stack usage on the Crestron RMC4.
+    /// </summary>
+    private const int MaxJsonDepth = 32;
+
+    private static readonly JsonSerializerSettings DeserializeSettings = new()
+    {
+        MaxDepth = MaxJsonDepth,
+    };
+
     private readonly string _deviceId;
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonRpcResponse>> _pending = new();
     private readonly ConcurrentDictionary<long, IAutoPollSubscription> _autoPolls = new();
@@ -122,7 +138,7 @@ public sealed class JsonRpcDispatcher
         JsonRpcResponse? message;
         try
         {
-            message = JsonConvert.DeserializeObject<JsonRpcResponse>(json);
+            message = JsonConvert.DeserializeObject<JsonRpcResponse>(json, DeserializeSettings);
         }
         catch (JsonException ex)
         {

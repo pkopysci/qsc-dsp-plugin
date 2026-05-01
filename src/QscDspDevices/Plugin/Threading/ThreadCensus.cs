@@ -23,11 +23,14 @@ namespace QscDspDevices.Plugin.Threading;
 /// </para>
 /// <para>
 /// If a fourth registration is attempted while three are alive, the
-/// census logs <c>Logger.Error</c> "thread budget breached" and (in
-/// DEBUG builds only) calls <see cref="Environment.FailFast(string)"/>
-/// so the breach surfaces in tests immediately. RELEASE builds log and
-/// return a sentinel registration whose <c>IsBudgetBreach</c> is
-/// <c>true</c> (the README forbids host crashes).
+/// census logs <c>Logger.Error</c> "thread budget breached" and
+/// returns a sentinel registration whose <c>IsBudgetBreach</c> is
+/// <c>true</c>; disposing it is a no-op. The README forbids host
+/// crashes, so the census never calls <see cref="Environment.FailFast(string)"/>.
+/// Callers that care (tests, hot paths) should check
+/// <see cref="ThreadCensusRegistration.IsBudgetBreach"/> and
+/// short-circuit; the breach is observable via <see cref="Log.Error"/>
+/// regardless.
 /// </para>
 /// <para>
 /// One <see cref="ThreadCensus"/> instance per plugin. Thread-safe.
@@ -74,11 +77,11 @@ public sealed class ThreadCensus
     /// Returns a disposable handle whose <see cref="ThreadCensusRegistration.Dispose"/>
     /// removes the entry. If registering would exceed
     /// <see cref="MaxThreads"/> the census logs <c>Logger.Error</c>
-    /// "thread budget breached" and (in DEBUG only) triggers
-    /// <see cref="Environment.FailFast(string)"/>. RELEASE callers
-    /// receive a sentinel registration with
-    /// <see cref="ThreadCensusRegistration.IsBudgetBreach"/> <c>true</c>;
-    /// disposing it is a no-op.
+    /// "thread budget breached" and returns a sentinel registration with
+    /// <see cref="ThreadCensusRegistration.IsBudgetBreach"/> <c>true</c>
+    /// (disposing is a no-op). The README forbids host crashes, so this
+    /// method never calls <see cref="Environment.FailFast(string)"/> —
+    /// breaches surface through logs and the sentinel return only.
     /// </summary>
     /// <param name="role">A short role descriptor, e.g. "session", "send", "receive", "timer".</param>
     /// <returns>The registration handle.</returns>
@@ -94,11 +97,6 @@ public sealed class ThreadCensus
                 string aliveList = string.Join(", ", _alive.Values.Select(n => $"'{n}'"));
                 string breach = $"Thread budget breached: tried to register a {MaxThreads + 1}th plugin work item '{role}' while {MaxThreads} are alive ({aliveList}).";
                 Log.Error(_deviceId, breach);
-
-#if DEBUG
-                Environment.FailFast(breach);
-#endif
-
                 return ThreadCensusRegistration.Breach;
             }
 

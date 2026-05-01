@@ -17,6 +17,8 @@ namespace QscDspDevices.UnitTests.Plugin;
 /// </summary>
 public sealed class ThreadCensusTests
 {
+    private static readonly string[] ExpectedRoles = { "send", "receive", "timer" };
+
     [Fact]
     public void Constructor_with_null_deviceId_throws()
     {
@@ -131,6 +133,35 @@ public sealed class ThreadCensusTests
         breach.IsBudgetBreach.Should().BeTrue();
         Action act = () => breach.Dispose();
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Fourth_concurrent_registration_returns_breach_sentinel_without_crashing()
+    {
+        // README §"Exception Handling" forbids host crashes, so a budget
+        // breach must NOT call Environment.FailFast — it must log, return
+        // a sentinel, and let the caller continue. This test pins that
+        // contract; previously this code path called FailFast in DEBUG
+        // and could not be exercised under xUnit.
+        var sut = new ThreadCensus("dsp-1");
+        ThreadCensusRegistration r1 = sut.Register("send");
+        ThreadCensusRegistration r2 = sut.Register("receive");
+        ThreadCensusRegistration r3 = sut.Register("timer");
+
+        ThreadCensusRegistration overflow = sut.Register("fourth");
+
+        overflow.IsBudgetBreach.Should().BeTrue();
+        sut.AliveCount.Should().Be(3);
+        sut.Snapshot().Should().BeEquivalentTo(ExpectedRoles);
+
+        Action disposeBreach = () => overflow.Dispose();
+        disposeBreach.Should().NotThrow();
+        sut.AliveCount.Should().Be(3);
+
+        r1.Dispose();
+        r2.Dispose();
+        r3.Dispose();
+        sut.AliveCount.Should().Be(0);
     }
 
     [Fact]

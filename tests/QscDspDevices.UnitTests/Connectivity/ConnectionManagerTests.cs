@@ -100,6 +100,13 @@ public sealed class ConnectionManagerTests
             queue,
             dispatcher);
 
+        // Subscribe BEFORE the failure so we don't miss the waiter-added
+        // signal. The session task registers a clock waiter inside
+        // ReconnectStrategy.WaitForNextAttemptAsync after a failed attempt;
+        // gating Advance() on that registration avoids advancing time
+        // before the production code is ready to wait for it.
+        Task waiterAdded = clock.WhenNextWaiterAddedAsync();
+
         sut.Connect();
 
         await WaitForStateAsync(sut, ConnectionState.Connecting);
@@ -109,11 +116,7 @@ public sealed class ConnectionManagerTests
         // verify by counting Connect calls before and after the advance.
         await WaitForConnectCountAsync(transport, 1);
 
-        // The session loop now awaits the reconnect interval via the
-        // deterministic clock. Wait for the waiter to register before
-        // advancing time, otherwise we may Advance before the session
-        // task has reached _clock.DelayAsync.
-        await WaitForClockWaitersAsync(clock, 1);
+        await waiterAdded.WaitAsync(TimeSpan.FromSeconds(15));
 
         // Advance only 14s — no second Connect yet.
         clock.Advance(TimeSpan.FromSeconds(14));
@@ -151,12 +154,15 @@ public sealed class ConnectionManagerTests
         transport.SimulateConnectSuccess();
         await WaitForStateAsync(sut, ConnectionState.Connected);
 
-        // Cause a mid-flight drop.
+        // Subscribe BEFORE the drop so we don't miss the waiter-added
+        // signal. After the drop, the session loop reaches
+        // ReconnectStrategy.WaitForNextAttemptAsync and registers a
+        // 15-second clock waiter; we wait on that registration before
+        // advancing virtual time.
+        Task waiterAdded = clock.WhenNextWaiterAddedAsync();
         transport.SimulateMidFlightDrop("cable pulled");
 
-        // Manager should schedule a reconnect 15s later. Wait for the
-        // wait-for-reconnect to register first, then advance the clock.
-        await WaitForClockWaitersAsync(clock, 1);
+        await waiterAdded.WaitAsync(TimeSpan.FromSeconds(15));
         clock.Advance(TimeSpan.FromSeconds(15));
         await WaitForConnectCountAsync(transport, 2);
 
@@ -271,20 +277,6 @@ public sealed class ConnectionManagerTests
             if (DateTime.UtcNow > deadline)
             {
                 throw new TimeoutException($"Transport.ConnectCallCount did not reach {desired} within {timeoutMs}ms; current is {transport.ConnectCallCount}.");
-            }
-
-            await Task.Delay(10);
-        }
-    }
-
-    private static async Task WaitForClockWaitersAsync(DeterministicClock clock, int desired, int timeoutMs = 10000)
-    {
-        DateTime deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
-        while (clock.PendingWaiters < desired)
-        {
-            if (DateTime.UtcNow > deadline)
-            {
-                throw new TimeoutException($"DeterministicClock.PendingWaiters did not reach {desired} within {timeoutMs}ms; current is {clock.PendingWaiters}.");
             }
 
             await Task.Delay(10);

@@ -95,4 +95,38 @@ public sealed class DeterministicClockTests
 
         clock.UtcNow.Should().Be(initial.AddHours(1));
     }
+
+    [Fact]
+    public async Task WhenNextWaiterAddedAsync_completes_when_a_waiter_registers()
+    {
+        var clock = new DeterministicClock();
+        Task notify = clock.WhenNextWaiterAddedAsync();
+
+        notify.IsCompleted.Should().BeFalse();
+
+        Task waiter = clock.DelayAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        await notify.WaitAsync(TimeSpan.FromSeconds(2));
+        notify.IsCompleted.Should().BeTrue();
+        waiter.IsCompleted.Should().BeFalse();
+
+        clock.Advance(TimeSpan.FromSeconds(5));
+        await waiter;
+    }
+
+    [Fact]
+    public async Task WhenNextWaiterAddedAsync_returns_a_fresh_task_after_each_waiter()
+    {
+        var clock = new DeterministicClock();
+
+        Task first = clock.WhenNextWaiterAddedAsync();
+        _ = clock.DelayAsync(TimeSpan.FromSeconds(1), CancellationToken.None);
+        await first.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Task second = clock.WhenNextWaiterAddedAsync();
+        second.IsCompleted.Should().BeFalse();
+
+        _ = clock.DelayAsync(TimeSpan.FromSeconds(1), CancellationToken.None);
+        await second.WaitAsync(TimeSpan.FromSeconds(2));
+    }
 }

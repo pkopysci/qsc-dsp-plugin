@@ -30,6 +30,7 @@ public sealed class DeterministicClock : IQrcClock
 {
     private readonly object _lock = new();
     private readonly List<Waiter> _waiters = new();
+    private TaskCompletionSource _nextWaiterAdded = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private DateTime _now;
 
     /// <summary>
@@ -69,6 +70,23 @@ public sealed class DeterministicClock : IQrcClock
         }
     }
 
+    /// <summary>
+    /// Returns a Task that completes the next time a waiter is added via
+    /// <see cref="DelayAsync"/>. Tests use this to gate <see cref="Advance"/>
+    /// on the production code actually reaching its delay call — polling
+    /// on <see cref="PendingWaiters"/> is racy on slow CI runners. Each
+    /// call returns the same Task for the in-flight wait; once it fires,
+    /// a fresh Task is created for the next waiter.
+    /// </summary>
+    /// <returns>A Task that completes when the next waiter registers.</returns>
+    public Task WhenNextWaiterAddedAsync()
+    {
+        lock (_lock)
+        {
+            return _nextWaiterAdded.Task;
+        }
+    }
+
     /// <inheritdoc />
     public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
     {
@@ -80,11 +98,16 @@ public sealed class DeterministicClock : IQrcClock
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         Waiter waiter;
+        TaskCompletionSource notify;
         lock (_lock)
         {
             waiter = new Waiter(_now + delay, tcs);
             _waiters.Add(waiter);
+            notify = _nextWaiterAdded;
+            _nextWaiterAdded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         }
+
+        notify.TrySetResult();
 
         cancellationToken.Register(() =>
         {

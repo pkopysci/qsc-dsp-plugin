@@ -47,7 +47,7 @@ public sealed class AudioZoneRegistry
         ArgumentNullException.ThrowIfNull(zoneId);
         ArgumentNullException.ThrowIfNull(controlTag);
 
-        var key = (channelId, zoneId);
+        (string ChannelId, string ZoneId) key = (channelId, zoneId);
         lock (_lock)
         {
             if (_byPair.ContainsKey(key))
@@ -76,7 +76,7 @@ public sealed class AudioZoneRegistry
     {
         ArgumentNullException.ThrowIfNull(channelId);
         ArgumentNullException.ThrowIfNull(zoneId);
-        var key = (channelId, zoneId);
+        (string ChannelId, string ZoneId) key = (channelId, zoneId);
         lock (_lock)
         {
             if (_byPair.TryGetValue(key, out string? tag))

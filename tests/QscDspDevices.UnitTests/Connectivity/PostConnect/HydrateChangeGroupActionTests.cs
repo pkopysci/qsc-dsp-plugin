@@ -25,7 +25,7 @@ public sealed class HydrateChangeGroupActionTests
     [Fact]
     public async Task Hydration_with_no_channels_skips_silently()
     {
-        using var queue = NewQueue();
+        using CommandQueue queue = NewQueue();
         var registry = new AudioChannelRegistry("dsp-1");
         var manager = new ChangeGroupManager("dsp-1", new IdGenerator());
         var dispatcher = new JsonRpcDispatcher("dsp-1");
@@ -39,7 +39,7 @@ public sealed class HydrateChangeGroupActionTests
     [Fact]
     public async Task Hydration_enqueues_AddControl_per_tag_then_AutoPoll()
     {
-        using var queue = NewQueue();
+        using CommandQueue queue = NewQueue();
         var registry = new AudioChannelRegistry("dsp-1");
         registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 0, 0, NoTags));
         registry.RegisterOutput(new AudioChannel("out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags));
@@ -68,7 +68,7 @@ public sealed class HydrateChangeGroupActionTests
     [Fact]
     public async Task Hydration_waits_for_LogonAction_completion_when_supplied()
     {
-        using var queue = NewQueue();
+        using CommandQueue queue = NewQueue();
         var registry = new AudioChannelRegistry("dsp-1");
         registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 0, 0, NoTags));
 
@@ -101,7 +101,7 @@ public sealed class HydrateChangeGroupActionTests
         await logonTask;
         await hydrate;
 
-        var afterAll = queue.SnapshotPending();
+        IReadOnlyList<JsonRpcRequest> afterAll = queue.SnapshotPending();
         afterAll.Should().HaveCount(3);
         afterAll[2].Method.Should().Be("ChangeGroup.AutoPoll");
     }
@@ -109,7 +109,7 @@ public sealed class HydrateChangeGroupActionTests
     [Fact]
     public void Constructor_with_null_required_args_throws()
     {
-        using var queue = NewQueue();
+        using CommandQueue queue = NewQueue();
         var registry = new AudioChannelRegistry("d");
         var manager = new ChangeGroupManager("d", new IdGenerator());
         var dispatcher = new JsonRpcDispatcher("d");
@@ -130,7 +130,7 @@ public sealed class HydrateChangeGroupActionTests
     [Fact]
     public async Task Cancelled_token_propagates()
     {
-        using var queue = NewQueue();
+        using CommandQueue queue = NewQueue();
         var registry = new AudioChannelRegistry("d");
         var manager = new ChangeGroupManager("d", new IdGenerator());
         var dispatcher = new JsonRpcDispatcher("d");

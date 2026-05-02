@@ -156,6 +156,36 @@ public sealed class JsonRpcDispatcherTests
     }
 
     [Fact]
+    public void ClearAutoPolls_drops_every_subscription_and_returns_the_count()
+    {
+        var sut = new JsonRpcDispatcher("dsp-1");
+        sut.RegisterAutoPoll(1, new RecordingSubscription());
+        sut.RegisterAutoPoll(2, new RecordingSubscription());
+        sut.RegisterAutoPoll(3, new RecordingSubscription());
+
+        int cleared = sut.ClearAutoPolls();
+
+        cleared.Should().Be(3);
+
+        // Re-register at the same ids without throwing — the prior
+        // registrations are gone.
+        Action reregister = () =>
+        {
+            sut.RegisterAutoPoll(1, new RecordingSubscription());
+            sut.RegisterAutoPoll(2, new RecordingSubscription());
+            sut.RegisterAutoPoll(3, new RecordingSubscription());
+        };
+        reregister.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ClearAutoPolls_on_empty_returns_zero()
+    {
+        var sut = new JsonRpcDispatcher("dsp-1");
+        sut.ClearAutoPolls().Should().Be(0);
+    }
+
+    [Fact]
     public void Constructor_with_null_deviceId_throws()
     {
         Action act = () => _ = new JsonRpcDispatcher(null!);

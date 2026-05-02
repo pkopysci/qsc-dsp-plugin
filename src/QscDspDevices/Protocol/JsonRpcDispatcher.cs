@@ -134,6 +134,20 @@ public sealed class JsonRpcDispatcher
     public bool UnregisterAutoPoll(long id) => _autoPolls.TryRemove(id, out _);
 
     /// <summary>
+    /// Clears every registered AutoPoll subscription. Called by the
+    /// connection manager on every disconnect cycle so the dispatcher
+    /// does not accumulate stale subscriptions across reconnects (each
+    /// reconnect issues a fresh `ChangeGroup.AutoPoll` with a new id).
+    /// </summary>
+    /// <returns>The count of subscriptions cleared.</returns>
+    public int ClearAutoPolls()
+    {
+        int count = _autoPolls.Count;
+        _autoPolls.Clear();
+        return count;
+    }
+
+    /// <summary>
     /// Routes a single inbound JSON-RPC frame. Called by the receive-loop
     /// for each frame the framer emits.
     /// </summary>

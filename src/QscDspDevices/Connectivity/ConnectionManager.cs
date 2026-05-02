@@ -7,6 +7,7 @@ using QscDspDevices.Plugin;
 using QscDspDevices.Plugin.Threading;
 using QscDspDevices.Protocol;
 using QscDspDevices.Protocol.JsonRpc;
+using QscDspDevices.Protocol.Logging;
 using QscDspDevices.Transport;
 
 namespace QscDspDevices.Connectivity;
@@ -433,6 +434,10 @@ public sealed class ConnectionManager : IDisposable
 
     private async Task RunKeepaliveLoopAsync(CancellationToken cancellationToken)
     {
+        // Same rationale as RunSendLoopAsync — register the M3 keepalive
+        // Task so the README §4 ≤3-thread budget accounts for it.
+        ThreadCensusRegistration registration = _threadCensus.Register("keepalive");
+
         try
         {
             while (!cancellationToken.IsCancellationRequested)
@@ -459,10 +464,21 @@ public sealed class ConnectionManager : IDisposable
         {
             // Session shutting down; expected.
         }
+        finally
+        {
+            registration.Dispose();
+        }
     }
 
     private async Task RunSendLoopAsync(CancellationToken cancellationToken)
     {
+        // Register with the thread census so the runtime guard accounts
+        // for the M3 send Task as one of the README §4 "≤3 plugin
+        // threads". The token-based registration is essential: this
+        // method awaits CommandQueue.DequeueAsync, so its continuations
+        // resume on different threadpool workers.
+        ThreadCensusRegistration registration = _threadCensus.Register("send");
+
         try
         {
             while (!cancellationToken.IsCancellationRequested)
@@ -479,6 +495,13 @@ public sealed class ConnectionManager : IDisposable
 
                 string json = Newtonsoft.Json.JsonConvert.SerializeObject(request);
                 byte[] payload = QrcFramer.Encode(json);
+
+                // Logger.Debug is off by default at runtime; turning it on
+                // for diagnostics must NOT expose Logon credentials to the
+                // log stream. RedactingDebugFormatter formats the request
+                // with Logon's Password field replaced by "***" before
+                // logging; non-Logon requests pass through verbatim.
+                Log.Debug(_deviceId, RedactingDebugFormatter.Format(request));
 
                 try
                 {
@@ -500,6 +523,10 @@ public sealed class ConnectionManager : IDisposable
         catch (OperationCanceledException)
         {
             // Session shutting down; expected.
+        }
+        finally
+        {
+            registration.Dispose();
         }
     }
 
@@ -586,6 +613,17 @@ public sealed class ConnectionManager : IDisposable
         StopIoLoops();
         _queue.Drain();
         _dispatcher.CancelAllPending("connection lost");
+
+        // Each reconnect issues a fresh ChangeGroup.AutoPoll with a new
+        // id; without clearing here, the dispatcher accumulates a stale
+        // subscription per reconnect cycle (memory leak + a CA1031-
+        // swallowed InvalidOperationException on a future id wrap).
+        int cleared = _dispatcher.ClearAutoPolls();
+        if (cleared > 0)
+        {
+            Log.Notice(_deviceId, $"Cleared {cleared} stale AutoPoll subscription(s) on disconnect.");
+        }
+
         try
         {
             _transport.Disconnect();

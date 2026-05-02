@@ -132,6 +132,24 @@ public sealed class ChangeGroupManagerTests
     }
 
     [Fact]
+    public void OnPush_with_an_error_response_logs_and_skips_the_callback()
+    {
+        var sut = new ChangeGroupManager("dsp-1", new IdGenerator());
+        bool called = false;
+        sut.SetDeltaCallback(_ => called = true);
+
+        var errorResponse = new JsonRpcResponse
+        {
+            Id = 1,
+            Error = new JsonRpcError { Code = -32604, Message = "Core on Standby" },
+        };
+
+        Action act = () => sut.OnPush(errorResponse);
+        act.Should().NotThrow();
+        called.Should().BeFalse();
+    }
+
+    [Fact]
     public void OnPush_with_no_callback_set_is_a_no_op()
     {
         var sut = new ChangeGroupManager("dsp-1", new IdGenerator());

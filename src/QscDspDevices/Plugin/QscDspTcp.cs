@@ -10,6 +10,7 @@ using gcu_hardware_service.Routable;
 using QscDspDevices.AudioControl;
 using QscDspDevices.Connectivity;
 using QscDspDevices.Connectivity.PostConnect;
+using QscDspDevices.Connectivity.Redundancy;
 using QscDspDevices.LogicTriggers;
 using QscDspDevices.Plugin.Threading;
 using QscDspDevices.Protocol;
@@ -72,6 +73,15 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     private AudioRoutingService? _routingService;
     private AudioZoneEnableService? _zoneEnableService;
     private LogicTriggerService? _triggerService;
+    private RoutingCommandQueue? _routingQueue;
+    private AudioControlServiceFanout? _fanout;
+    private IdGenerator? _ids;
+    private string? _primaryHostname;
+    private int _primaryPort;
+    private ChangeGroupManager? _primaryGroupManager;
+    private string? _backupHostname;
+    private int _backupPort;
+    private RedundantConnectionPair? _redundantPair;
     private bool _disposed;
 
     /// <summary>
@@ -145,14 +155,11 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     /// <inheritdoc />
     public event EventHandler<GenericSingleEventArgs<string>>? DspLogicTriggerStateChanged;
 
-#pragma warning disable CS0067 // Event raised in a later milestone — see the M6 design notes.
-
     /// <inheritdoc />
     public event EventHandler<GenericSingleEventArgs<string>>? RedundancyStateChanged;
 
     /// <inheritdoc />
     public event EventHandler<GenericSingleEventArgs<string>>? BackupDeviceConnectionChanged;
-#pragma warning restore CS0067
 
     /// <summary>
     /// Gets the runtime guard that enforces the README §4 hard cap of
@@ -163,16 +170,23 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     public ThreadCensus ThreadCensus => _threadCensus;
 
     /// <inheritdoc />
-    public bool PrimaryDeviceActive => true;
+    /// <remarks>
+    /// In single-Core mode (no <see cref="SetBackupDeviceConnection"/>),
+    /// this returns <see cref="BaseDevice.IsOnline"/> — the only Core
+    /// the plugin knows about IS the primary, and it's "active" iff
+    /// the connection is up. In redundant mode, this delegates to the
+    /// pair's currently-active slot.
+    /// </remarks>
+    public bool PrimaryDeviceActive => _redundantPair?.PrimaryDeviceActive ?? IsOnline;
 
     /// <inheritdoc />
-    public bool BackupDeviceActive => false;
+    public bool BackupDeviceActive => _redundantPair?.BackupDeviceActive ?? false;
 
     /// <inheritdoc />
-    public bool BackupDeviceOnline => false;
+    public bool BackupDeviceOnline => _redundantPair?.BackupDeviceOnline ?? false;
 
     /// <inheritdoc />
-    public bool BackupDeviceExists => false;
+    public bool BackupDeviceExists => _backupHostname is not null;
 
     /// <inheritdoc />
     public void Initialize(string hostId, int coreId, string hostname, int port, string username, string password)
@@ -195,21 +209,21 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
             _credentials = new LogonCredentials(username, password);
         }
 
-        IConnectionTransport transport = BuildTransport(hostname, port);
-        var queue = new CommandQueue(hostId);
-        var dispatcher = new JsonRpcDispatcher(hostId);
+        // The M3-M5 service tier always enqueues to a RoutingCommandQueue
+        // facade. In single-Core mode the facade points at the only
+        // queue (the primary's). In redundant mode, the pair coordinator
+        // re-points the facade on every active-slot transition.
         var ids = new IdGenerator();
         var scaler = new LevelScaler(hostId);
-        var groupManager = new ChangeGroupManager(hostId, ids);
-        var audioService = new AudioControlService(hostId, _registry, scaler, queue, ids);
-        var presetService = new PresetService(hostId, _registry, queue, ids);
-        var routingService = new AudioRoutingService(hostId, _registry, queue, ids);
-        var zoneService = new AudioZoneEnableService(hostId, _zoneRegistry, queue, ids);
-        var triggerService = new LogicTriggerService(hostId, _triggerRegistry, queue, ids);
+        var routingQueue = new RoutingCommandQueue(hostId);
+
+        var audioService = new AudioControlService(hostId, _registry, scaler, routingQueue, ids);
+        var presetService = new PresetService(hostId, _registry, routingQueue, ids);
+        var routingService = new AudioRoutingService(hostId, _registry, routingQueue, ids);
+        var zoneService = new AudioZoneEnableService(hostId, _zoneRegistry, routingQueue, ids);
+        var triggerService = new LogicTriggerService(hostId, _triggerRegistry, routingQueue, ids);
         var fanout = new AudioControlServiceFanout(
             _registry, _zoneRegistry, _triggerRegistry, routingService, zoneService, triggerService, audioService);
-
-        groupManager.SetDeltaCallback(fanout.Dispatch);
 
         // Forward the M3 AudioControlService events to QscDspTcp's own
         // surface — the framework calls IAudioControl.* events on the
@@ -226,45 +240,38 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         // M5: forward the logic-trigger event.
         triggerService.LogicTriggerStateChanged += (_, args) => DspLogicTriggerStateChanged?.Invoke(this, args);
 
-        var logon = new LogonAction(
-            hostId,
-            () =>
-            {
-                lock (_credentialsLock)
-                {
-                    return _credentials;
-                }
-            },
-            queue,
-            dispatcher,
-            ids);
+        // Build the primary connection's manager. Each connection gets
+        // its own queue / dispatcher / group manager / post-connect
+        // chain — the facade above abstracts the queue selection on
+        // the producer side.
+        ConnectionResources primary = BuildConnectionResources(hostId, hostname, port, ids, fanout);
 
-        var hydrate = new HydrateChangeGroupAction(
-            hostId, _registry, _zoneRegistry, _triggerRegistry, groupManager, queue, dispatcher, logon);
-        var postConnect = new CompositePostConnectAction(new IPostConnectAction[] { logon, hydrate });
+        primary.Manager.StateChanged += OnStateChanged;
 
-        var manager = new ConnectionManager(
-            hostId,
-            transport,
-            new ReconnectStrategy(_clock),
-            queue,
-            dispatcher,
-            postConnect: postConnect,
-            threadCensus: _threadCensus,
-            clock: _clock,
-            ids: ids);
-
-        manager.StateChanged += OnStateChanged;
-
-        _transport = transport;
-        _queue = queue;
-        _dispatcher = dispatcher;
-        _connectionManager = manager;
+        _transport = primary.Transport;
+        _queue = primary.Queue;
+        _dispatcher = primary.Dispatcher;
+        _connectionManager = primary.Manager;
         _audioService = audioService;
         _presetService = presetService;
         _routingService = routingService;
         _zoneEnableService = zoneService;
         _triggerService = triggerService;
+        _routingQueue = routingQueue;
+        _fanout = fanout;
+        _ids = ids;
+        _primaryHostname = hostname;
+        _primaryPort = port;
+        _primaryGroupManager = primary.GroupManager;
+
+        // Single-Core mode: route directly to the primary's queue
+        // immediately. The pair coordinator will swap this if/when
+        // the backup goes active. The fanout is also wired now (the
+        // pair will re-wire it on active swap, but in single-Core
+        // mode the wire stays put forever).
+        primary.GroupManager.SetDeltaCallback(fanout.Dispatch);
+        routingQueue.SetActive(primary.Queue);
+
         IsInitialized = true;
 
         Log.Notice(Id, $"Initialized for {hostname}:{port} (coreId={coreId}).");
@@ -281,6 +288,21 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
             return;
         }
 
+        // M6: if a backup was configured via SetBackupDeviceConnection
+        // and we haven't built the pair yet, lazy-build it now and
+        // delegate Connect to the pair (which starts both managers).
+        // The single-Core path is unchanged.
+        if (_backupHostname is not null && _redundantPair is null)
+        {
+            BuildRedundantPair();
+        }
+
+        if (_redundantPair is not null)
+        {
+            _redundantPair.Connect();
+            return;
+        }
+
         _connectionManager.Connect();
     }
 
@@ -289,6 +311,12 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     {
         if (_disposed)
         {
+            return;
+        }
+
+        if (_redundantPair is not null)
+        {
+            _redundantPair.Disconnect();
             return;
         }
 
@@ -486,10 +514,33 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Per the framework spec, this is called after <c>Initialize</c>
+    /// and before <c>Connect</c>. The backup config is stashed; the
+    /// pair is constructed in the next <see cref="Connect"/> call.
+    /// Re-calling with a new hostname before Connect replaces the
+    /// stash; calling after Connect logs <c>Logger.Warn</c> and is a
+    /// no-op (a hot reconfiguration would require a Disconnect /
+    /// re-Connect cycle).
+    /// </remarks>
     public void SetBackupDeviceConnection(string hostname, int port)
     {
         ParameterValidator.ThrowIfNullOrEmpty(hostname, nameof(SetBackupDeviceConnection), nameof(hostname));
-        Log.Notice(Id, $"SetBackupDeviceConnection('{hostname}:{port}') — not implemented in M2 (lands in M6).");
+
+        if (_redundantPair is not null)
+        {
+            string deviceId = string.IsNullOrEmpty(Id) ? "QscDspTcp" : Id;
+            Log.Warn(deviceId, $"SetBackupDeviceConnection('{hostname}:{port}') called after Connect; ignoring. Re-configure requires Disconnect first.");
+            return;
+        }
+
+        _backupHostname = hostname;
+        _backupPort = port;
+
+        if (!string.IsNullOrEmpty(Id))
+        {
+            Log.Notice(Id, $"Backup device configured: {hostname}:{port}. Pair will be constructed on next Connect.");
+        }
     }
 
     /// <inheritdoc />
@@ -514,7 +565,20 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
 
         if (disposing)
         {
-            if (_connectionManager is not null)
+            // Disposing the pair also disposes both underlying managers
+            // (primary AND backup), so when the pair is present we
+            // skip the bare _connectionManager.Dispose() to avoid a
+            // double-dispose on the primary.
+            if (_redundantPair is not null)
+            {
+                if (_connectionManager is not null)
+                {
+                    _connectionManager.StateChanged -= OnStateChanged;
+                }
+
+                _redundantPair.Dispose();
+            }
+            else if (_connectionManager is not null)
             {
                 _connectionManager.StateChanged -= OnStateChanged;
                 _connectionManager.Dispose();
@@ -522,6 +586,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
 
             _transport?.Dispose();
             _queue?.Dispose();
+            _routingQueue?.Dispose();
         }
     }
 
@@ -537,6 +602,72 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     /// <returns>The transport instance.</returns>
     protected virtual IConnectionTransport BuildTransport(string hostname, int port)
         => new BasicTcpClientTransport(hostname, port);
+
+    /// <summary>
+    /// Builds the per-connection plumbing — transport, queue, dispatcher,
+    /// change-group manager, post-connect chain, and connection manager.
+    /// Used once for the primary at <c>Initialize</c> time, and once
+    /// more for the backup at <c>Connect</c> time when
+    /// <c>SetBackupDeviceConnection</c> has been called.
+    /// </summary>
+    /// <param name="hostId">The owning device id.</param>
+    /// <param name="hostname">The remote hostname.</param>
+    /// <param name="port">The remote port.</param>
+    /// <param name="ids">Shared id generator (one per <see cref="QscDspTcp"/>).</param>
+    /// <param name="fanout">Shared fanout dispatcher.</param>
+    /// <returns>The connection's resources.</returns>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "Returned ConnectionResources owns the manager + transport + queue; the caller (Initialize for primary, BuildRedundantPair for backup) installs them into long-lived fields and disposes them in Dispose / via the pair.")]
+    private ConnectionResources BuildConnectionResources(string hostId, string hostname, int port, IdGenerator ids, AudioControlServiceFanout fanout)
+    {
+        IConnectionTransport transport = BuildTransport(hostname, port);
+        var queue = new CommandQueue(hostId);
+        var dispatcher = new JsonRpcDispatcher(hostId);
+        var groupManager = new ChangeGroupManager(hostId, ids);
+
+        // Each connection has its own Logon + Hydrate chain bound to
+        // its own queue + dispatcher. The shared fanout is wired into
+        // each group manager separately; in single-Core mode the
+        // wiring is permanent, in redundant mode the pair coordinator
+        // de-routes the inactive side and re-routes the active.
+        var logon = new LogonAction(
+            hostId,
+            () =>
+            {
+                lock (_credentialsLock)
+                {
+                    return _credentials;
+                }
+            },
+            queue,
+            dispatcher,
+            ids);
+
+        var hydrate = new HydrateChangeGroupAction(
+            hostId, _registry, _zoneRegistry, _triggerRegistry, groupManager, queue, dispatcher, logon);
+        var postConnect = new CompositePostConnectAction(new IPostConnectAction[] { logon, hydrate });
+
+        var manager = new ConnectionManager(
+            hostId,
+            transport,
+            new ReconnectStrategy(_clock),
+            queue,
+            dispatcher,
+            postConnect: postConnect,
+            threadCensus: _threadCensus,
+            clock: _clock,
+            ids: ids);
+
+        // Note that fanout is referenced but not yet attached to this
+        // group manager — single-Core attaches in Initialize, redundant
+        // attaches via the pair coordinator. fanout is captured to keep
+        // the parameter from going unused in the single-Core path.
+        _ = fanout;
+
+        return new ConnectionResources(transport, queue, dispatcher, groupManager, manager);
+    }
 
     /// <summary>
     /// Forwards <see cref="ConnectionManager"/> state changes to the
@@ -564,4 +695,46 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
                 break;
         }
     }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "BuildRedundantPair takes ownership of the new ConnectionManager via the RedundantConnectionPair, which disposes it on Pair.Dispose. The local goes out of scope after the pair captures the reference; CA2000 cannot see the ownership transfer.")]
+    private void BuildRedundantPair()
+    {
+        if (_ids is null || _fanout is null || _routingQueue is null
+            || _connectionManager is null || _queue is null || _dispatcher is null
+            || _primaryGroupManager is null || _backupHostname is null)
+        {
+            return;
+        }
+
+        ConnectionResources backup = BuildConnectionResources(Id, _backupHostname, _backupPort, _ids, _fanout);
+
+        var pair = new RedundantConnectionPair(
+            Id,
+            _connectionManager,
+            _queue,
+            _primaryGroupManager,
+            backup.Manager,
+            backup.Queue,
+            backup.GroupManager,
+            _routingQueue,
+            _fanout,
+            SwitchbackPolicy.Default);
+
+        // Forward the pair's events to the QscDspTcp surface.
+        pair.RedundancyStateChanged += (_, args) => RedundancyStateChanged?.Invoke(this, args);
+        pair.BackupDeviceConnectionChanged += (_, args) => BackupDeviceConnectionChanged?.Invoke(this, args);
+
+        _redundantPair = pair;
+        Log.Notice(Id, $"Redundant pair built: primary={_primaryHostname}:{_primaryPort}, backup={_backupHostname}:{_backupPort}.");
+    }
+
+    private sealed record ConnectionResources(
+        IConnectionTransport Transport,
+        CommandQueue Queue,
+        JsonRpcDispatcher Dispatcher,
+        ChangeGroupManager GroupManager,
+        ConnectionManager Manager);
 }

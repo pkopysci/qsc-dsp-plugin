@@ -267,18 +267,17 @@ public sealed class QscDspTcpTests
     }
 
     [Fact]
-    public void M6_SetBackupDeviceConnection_logs_Notice_and_validates_args()
+    public void SetBackupDeviceConnection_stashes_config_and_flips_BackupDeviceExists_true()
     {
-        using var sink = new TestLoggerSink();
         using var sut = new TestableQscDspTcp(new DeterministicClock());
         sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
+
+        sut.BackupDeviceExists.Should().BeFalse();
 
         Action act = () => sut.SetBackupDeviceConnection("backup.example", 1710);
         act.Should().NotThrow();
 
-        sink.Captures.Should().Contain(
-            c => c.Severity == gcu_common_utils.Logging.LogSeverity.Notice
-              && c.Message.Contains("not implemented in M2", StringComparison.Ordinal));
+        sut.BackupDeviceExists.Should().BeTrue();
 
         Action emptyHost = () => sut.SetBackupDeviceConnection(string.Empty, 1710);
         emptyHost.Should().Throw<ArgumentException>();
@@ -382,8 +381,15 @@ public sealed class QscDspTcpTests
     [Fact]
     public void IRedundancySupport_properties_default_to_no_backup()
     {
+        // Pre-Connect, pre-SetBackupDeviceConnection, pre-IsOnline-true:
+        // PrimaryDeviceActive tracks IsOnline (false here, no Connect),
+        // BackupDevice* are all false. M6 changed PrimaryDeviceActive's
+        // semantics from the M2 hardcoded `true` to "the only Core this
+        // plugin knows about IS active iff IsOnline" (single-Core mode)
+        // or "the pair's currently-active slot is Primary" (redundant
+        // mode).
         using var sut = new QscDspTcp();
-        sut.PrimaryDeviceActive.Should().BeTrue();
+        sut.PrimaryDeviceActive.Should().BeFalse();
         sut.BackupDeviceActive.Should().BeFalse();
         sut.BackupDeviceOnline.Should().BeFalse();
         sut.BackupDeviceExists.Should().BeFalse();

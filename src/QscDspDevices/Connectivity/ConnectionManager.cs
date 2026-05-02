@@ -33,6 +33,9 @@ namespace QscDspDevices.Connectivity;
 /// </remarks>
 public sealed class ConnectionManager : IDisposable
 {
+    /// <summary>The keepalive tick cadence (1 s; the timer itself enforces the 30 s silence window).</summary>
+    public static readonly TimeSpan KeepaliveTickInterval = TimeSpan.FromSeconds(1);
+
     private readonly string _deviceId;
     private readonly IConnectionTransport _transport;
     private readonly ReconnectStrategy _reconnect;
@@ -40,6 +43,8 @@ public sealed class ConnectionManager : IDisposable
     private readonly CommandQueue _queue;
     private readonly JsonRpcDispatcher _dispatcher;
     private readonly ThreadCensus _threadCensus;
+    private readonly IQrcClock? _clock;
+    private readonly IdGenerator? _ids;
 
     private readonly object _stateLock = new();
     private ConnectionState _state = ConnectionState.Disconnected;
@@ -47,6 +52,8 @@ public sealed class ConnectionManager : IDisposable
     private Task? _sessionTask;
     private CancellationTokenSource? _ioCts;
     private Task? _sendLoopTask;
+    private Task? _keepaliveTask;
+    private KeepaliveTimer? _keepalive;
     private QrcFramer? _framer;
     private EventHandler<GenericSingleEventArgs<ReadOnlyMemory<byte>>>? _onRxBytes;
     private bool _userRequestedDisconnect;
@@ -62,6 +69,8 @@ public sealed class ConnectionManager : IDisposable
     /// <param name="dispatcher">The dispatcher whose pending requests are cancelled on disconnect.</param>
     /// <param name="postConnect">Optional post-connect hook; defaults to a no-op.</param>
     /// <param name="threadCensus">Optional shared thread census. Defaults to a fresh census tagged to <paramref name="deviceId"/>; pass an existing instance when multiple components (e.g. <c>QscDspTcp</c> and the manager) must share one budget.</param>
+    /// <param name="clock">Optional clock for the M3 keepalive timer. When supplied alongside <paramref name="ids"/>, the manager wires a 30 s keepalive that emits <c>NoOp</c> requests during outbound silence. M2 unit tests pass null on both to disable keepalive.</param>
+    /// <param name="ids">Optional id generator for the keepalive's outbound NoOp requests. See <paramref name="clock"/>.</param>
     /// <exception cref="ArgumentNullException">If any required argument is null.</exception>
     public ConnectionManager(
         string deviceId,
@@ -70,7 +79,9 @@ public sealed class ConnectionManager : IDisposable
         CommandQueue queue,
         JsonRpcDispatcher dispatcher,
         IPostConnectAction? postConnect = null,
-        ThreadCensus? threadCensus = null)
+        ThreadCensus? threadCensus = null,
+        IQrcClock? clock = null,
+        IdGenerator? ids = null)
     {
         ArgumentNullException.ThrowIfNull(deviceId);
         ArgumentNullException.ThrowIfNull(transport);
@@ -85,6 +96,15 @@ public sealed class ConnectionManager : IDisposable
         _dispatcher = dispatcher;
         _postConnect = postConnect ?? new NoopPostConnectAction();
         _threadCensus = threadCensus ?? new ThreadCensus(deviceId);
+
+        // Clock + id-generator are optional because the M2 tests construct
+        // a manager without them; when both are supplied the M3 keepalive
+        // timer gets wired during OnConnectedAsync. Without them, the
+        // session runs without keepalive — fine for the deterministic-clock
+        // unit tests but disabled in production unless QscDspTcp passes
+        // them through.
+        _clock = clock;
+        _ids = ids;
     }
 
     /// <summary>
@@ -397,6 +417,48 @@ public sealed class ConnectionManager : IDisposable
         // token fires (Disconnect or session end).
         CancellationToken ioToken = _ioCts.Token;
         _sendLoopTask = Task.Run(() => RunSendLoopAsync(ioToken), ioToken);
+
+        // Keepalive: only when both clock + id generator were supplied.
+        // The M2 unit tests don't supply them and intentionally run
+        // without keepalive.
+        if (_clock is not null && _ids is not null)
+        {
+            _keepalive = new KeepaliveTimer(_clock, _ids, EnqueueAsync);
+            _keepaliveTask = Task.Run(() => RunKeepaliveLoopAsync(ioToken), ioToken);
+        }
+    }
+
+    private ValueTask<bool> EnqueueAsync(JsonRpcRequest request)
+        => ValueTask.FromResult(_queue.TryEnqueue(request));
+
+    private async Task RunKeepaliveLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(KeepaliveTickInterval, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                KeepaliveTimer? timer = _keepalive;
+                if (timer is null)
+                {
+                    return;
+                }
+
+                await timer.TickAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Session shutting down; expected.
+        }
     }
 
     private async Task RunSendLoopAsync(CancellationToken cancellationToken)
@@ -421,6 +483,7 @@ public sealed class ConnectionManager : IDisposable
                 try
                 {
                     _transport.Send(payload);
+                    _keepalive?.NotifyOutboundSent();
                 }
                 catch (InvalidOperationException ex)
                 {
@@ -466,7 +529,18 @@ public sealed class ConnectionManager : IDisposable
             // Cancellation noise.
         }
 
+        try
+        {
+            _keepaliveTask?.Wait(TimeSpan.FromSeconds(2));
+        }
+        catch (AggregateException)
+        {
+            // Cancellation noise.
+        }
+
         _sendLoopTask = null;
+        _keepaliveTask = null;
+        _keepalive = null;
         _ioCts?.Dispose();
         _ioCts = null;
         _framer = null;

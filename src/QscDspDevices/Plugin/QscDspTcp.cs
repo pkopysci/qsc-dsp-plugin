@@ -223,7 +223,9 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
             queue,
             dispatcher,
             postConnect: postConnect,
-            threadCensus: _threadCensus);
+            threadCensus: _threadCensus,
+            clock: _clock,
+            ids: ids);
 
         manager.StateChanged += OnStateChanged;
 

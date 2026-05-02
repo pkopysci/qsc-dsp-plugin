@@ -133,9 +133,11 @@ Each (re)connect runs a `CompositePostConnectAction` of two steps:
    `AudioChannelRegistry`, enqueues `ChangeGroup.AddControl` for the
    level-tag, mute-tag, and (M4) the output's `routerTag` when
    non-empty. Also (M4) enqueues `AddControl` for every
-   `(channelId, zoneId)` row in `AudioZoneRegistry`. Then registers
-   the AutoPoll id with the dispatcher and enqueues
-   `ChangeGroup.AutoPoll` at 250 ms.
+   `(channelId, zoneId)` row in `AudioZoneRegistry`, and (M5) for
+   every registered logic-trigger tag in `LogicTriggerRegistry`.
+   Then registers the AutoPoll id with the dispatcher and enqueues
+   `ChangeGroup.AutoPoll` at 250 ms. The single `qsc-plugin-state`
+   group still sits well under the QRC 4-group cap.
 
 The Core's AutoPoll responses then drive `AudioControlService` cache
 updates and the `IAudioControl` event surface.

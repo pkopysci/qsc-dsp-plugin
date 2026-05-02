@@ -10,6 +10,7 @@ using gcu_hardware_service.Routable;
 using QscDspDevices.AudioControl;
 using QscDspDevices.Connectivity;
 using QscDspDevices.Connectivity.PostConnect;
+using QscDspDevices.LogicTriggers;
 using QscDspDevices.Plugin.Threading;
 using QscDspDevices.Protocol;
 using QscDspDevices.Protocol.ChangeGroup;
@@ -58,6 +59,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     private readonly ThreadCensus _threadCensus;
     private readonly AudioChannelRegistry _registry;
     private readonly AudioZoneRegistry _zoneRegistry;
+    private readonly LogicTriggerRegistry _triggerRegistry;
     private readonly object _credentialsLock = new();
 
     private LogonCredentials _credentials = LogonCredentials.Empty;
@@ -69,6 +71,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     private PresetService? _presetService;
     private AudioRoutingService? _routingService;
     private AudioZoneEnableService? _zoneEnableService;
+    private LogicTriggerService? _triggerService;
     private bool _disposed;
 
     /// <summary>
@@ -107,14 +110,19 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         // can land before Initialize.
         _zoneRegistry = new AudioZoneRegistry("QscDspTcp");
 
+        // M5 logic-trigger registry — AddDspLogicTrigger can also land
+        // pre-Initialize.
+        _triggerRegistry = new LogicTriggerRegistry("QscDspTcp");
+
         Manufacturer = "QSC";
         Model = "Q-SYS Core";
     }
 
     // M3 raises the four IAudioControl events; M4 raises the routing
-    // and zone-enable events. The remaining M5/M6 events (logic and
-    // redundancy) are declared but unraised, so the CS0067 pragma is
-    // narrowed to just that pair. M7 retires the suppression entirely.
+    // and zone-enable events; M5 raises DspLogicTriggerStateChanged.
+    // The remaining M6 events (redundancy, backup-device-connection)
+    // are declared but unraised, so the CS0067 pragma is narrowed to
+    // just that pair. M7 retires the suppression entirely.
 
     /// <inheritdoc />
     public event EventHandler<GenericDualEventArgs<string, string>>? AudioInputLevelChanged;
@@ -134,10 +142,10 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     /// <inheritdoc />
     public event EventHandler<GenericDualEventArgs<string, string>>? AudioZoneEnableChanged;
 
-#pragma warning disable CS0067 // Event raised in a later milestone — see the M5/M6 design notes.
-
     /// <inheritdoc />
     public event EventHandler<GenericSingleEventArgs<string>>? DspLogicTriggerStateChanged;
+
+#pragma warning disable CS0067 // Event raised in a later milestone — see the M6 design notes.
 
     /// <inheritdoc />
     public event EventHandler<GenericSingleEventArgs<string>>? RedundancyStateChanged;
@@ -197,7 +205,9 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         var presetService = new PresetService(hostId, _registry, queue, ids);
         var routingService = new AudioRoutingService(hostId, _registry, queue, ids);
         var zoneService = new AudioZoneEnableService(hostId, _zoneRegistry, queue, ids);
-        var fanout = new AudioControlServiceFanout(_registry, _zoneRegistry, routingService, zoneService, audioService);
+        var triggerService = new LogicTriggerService(hostId, _triggerRegistry, queue, ids);
+        var fanout = new AudioControlServiceFanout(
+            _registry, _zoneRegistry, _triggerRegistry, routingService, zoneService, triggerService, audioService);
 
         groupManager.SetDeltaCallback(fanout.Dispatch);
 
@@ -213,6 +223,9 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         routingService.RouteChanged += (_, args) => AudioRouteChanged?.Invoke(this, args);
         zoneService.ZoneEnableChanged += (_, args) => AudioZoneEnableChanged?.Invoke(this, args);
 
+        // M5: forward the logic-trigger event.
+        triggerService.LogicTriggerStateChanged += (_, args) => DspLogicTriggerStateChanged?.Invoke(this, args);
+
         var logon = new LogonAction(
             hostId,
             () =>
@@ -226,7 +239,8 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
             dispatcher,
             ids);
 
-        var hydrate = new HydrateChangeGroupAction(hostId, _registry, _zoneRegistry, groupManager, queue, dispatcher, logon);
+        var hydrate = new HydrateChangeGroupAction(
+            hostId, _registry, _zoneRegistry, _triggerRegistry, groupManager, queue, dispatcher, logon);
         var postConnect = new CompositePostConnectAction(new IPostConnectAction[] { logon, hydrate });
 
         var manager = new ConnectionManager(
@@ -250,6 +264,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         _presetService = presetService;
         _routingService = routingService;
         _zoneEnableService = zoneService;
+        _triggerService = triggerService;
         IsInitialized = true;
 
         Log.Notice(Id, $"Initialized for {hostname}:{port} (coreId={coreId}).");
@@ -458,12 +473,16 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     public void AddDspLogicTrigger(string id, string tagName, List<string> tags)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(AddDspLogicTrigger), nameof(id));
+        ParameterValidator.ThrowIfNullOrEmpty(tagName, nameof(AddDspLogicTrigger), nameof(tagName));
+        _ = tags; // The tags parameter is informational; not used by the QRC mapping.
+        _triggerRegistry.Register(id, tagName);
     }
 
     /// <inheritdoc />
     public void PulseDspLogicTrigger(string id)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(PulseDspLogicTrigger), nameof(id));
+        _triggerService?.Pulse(id);
     }
 
     /// <inheritdoc />

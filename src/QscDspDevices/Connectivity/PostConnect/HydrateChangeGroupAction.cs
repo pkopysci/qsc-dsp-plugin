@@ -3,6 +3,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using QscDspDevices.AudioControl;
+using QscDspDevices.LogicTriggers;
 using QscDspDevices.Plugin;
 using QscDspDevices.Protocol;
 using QscDspDevices.Protocol.ChangeGroup;
@@ -32,6 +33,7 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
     private readonly string _deviceId;
     private readonly AudioChannelRegistry _registry;
     private readonly AudioZoneRegistry? _zoneRegistry;
+    private readonly LogicTriggerRegistry? _triggerRegistry;
     private readonly ChangeGroupManager _groupManager;
     private readonly CommandQueue _queue;
     private readonly JsonRpcDispatcher _dispatcher;
@@ -60,6 +62,46 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
 
     /// <summary>
     /// Initializes a new instance of the <see cref="HydrateChangeGroupAction"/> class
+    /// with M5 logic-trigger support — the trigger tags are added to
+    /// the subscription list alongside the M3+M4 surface.
+    /// </summary>
+    /// <param name="deviceId">The owning device id.</param>
+    /// <param name="registry">The channel registry.</param>
+    /// <param name="zoneRegistry">The optional zone registry.</param>
+    /// <param name="triggerRegistry">The optional logic-trigger registry.</param>
+    /// <param name="groupManager">The change-group manager.</param>
+    /// <param name="queue">The command queue.</param>
+    /// <param name="dispatcher">The JSON-RPC dispatcher.</param>
+    /// <param name="logon">Optional Logon action whose completion this action waits on.</param>
+    /// <exception cref="ArgumentNullException">If any required argument is null.</exception>
+    public HydrateChangeGroupAction(
+        string deviceId,
+        AudioChannelRegistry registry,
+        AudioZoneRegistry? zoneRegistry,
+        LogicTriggerRegistry? triggerRegistry,
+        ChangeGroupManager groupManager,
+        CommandQueue queue,
+        JsonRpcDispatcher dispatcher,
+        LogonAction? logon)
+    {
+        ArgumentNullException.ThrowIfNull(deviceId);
+        ArgumentNullException.ThrowIfNull(registry);
+        ArgumentNullException.ThrowIfNull(groupManager);
+        ArgumentNullException.ThrowIfNull(queue);
+        ArgumentNullException.ThrowIfNull(dispatcher);
+
+        _deviceId = deviceId;
+        _registry = registry;
+        _zoneRegistry = zoneRegistry;
+        _triggerRegistry = triggerRegistry;
+        _groupManager = groupManager;
+        _queue = queue;
+        _dispatcher = dispatcher;
+        _logon = logon;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="HydrateChangeGroupAction"/> class
     /// with M4 zone-registry support — the zone-enable controlTags are
     /// added to the change-group subscription list alongside the M3
     /// level/mute/router tags.
@@ -80,20 +122,8 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
         CommandQueue queue,
         JsonRpcDispatcher dispatcher,
         LogonAction? logon)
+        : this(deviceId, registry, zoneRegistry, triggerRegistry: null, groupManager, queue, dispatcher, logon)
     {
-        ArgumentNullException.ThrowIfNull(deviceId);
-        ArgumentNullException.ThrowIfNull(registry);
-        ArgumentNullException.ThrowIfNull(groupManager);
-        ArgumentNullException.ThrowIfNull(queue);
-        ArgumentNullException.ThrowIfNull(dispatcher);
-
-        _deviceId = deviceId;
-        _registry = registry;
-        _zoneRegistry = zoneRegistry;
-        _groupManager = groupManager;
-        _queue = queue;
-        _dispatcher = dispatcher;
-        _logon = logon;
     }
 
     /// <inheritdoc />
@@ -114,10 +144,12 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
         IReadOnlyList<AudioChannel> channels = _registry.GetAllChannels();
         IReadOnlyList<(string ChannelId, string ZoneId, string ControlTag)> zones =
             _zoneRegistry?.GetAll() ?? Array.Empty<(string, string, string)>();
+        IReadOnlyList<(string Id, string TagName)> triggersForEarlyOut =
+            _triggerRegistry?.GetAll() ?? Array.Empty<(string, string)>();
 
-        if (channels.Count == 0 && zones.Count == 0)
+        if (channels.Count == 0 && zones.Count == 0 && triggersForEarlyOut.Count == 0)
         {
-            Log.Notice(_deviceId, "No audio channels or zone enables registered; skipping change-group subscribe.");
+            Log.Notice(_deviceId, "No audio channels, zone enables, or logic triggers registered; skipping change-group subscribe.");
             return;
         }
 
@@ -152,6 +184,16 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (TrySubscribe(controlTag, $"zone '({channelId}, {zoneId})'"))
+            {
+                subscribed++;
+            }
+        }
+
+        // M5: subscribe every registered logic-trigger tag.
+        foreach ((string triggerId, string tagName) in triggersForEarlyOut)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (TrySubscribe(tagName, $"logic trigger '{triggerId}'"))
             {
                 subscribed++;
             }

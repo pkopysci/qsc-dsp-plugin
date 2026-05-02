@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using FluentAssertions;
 using Newtonsoft.Json.Linq;
 using QscDspDevices.AudioControl;
+using QscDspDevices.LogicTriggers;
 using QscDspDevices.Protocol;
 using QscDspDevices.Protocol.ChangeGroup;
 using Xunit;
@@ -86,6 +87,65 @@ public sealed class AudioControlServiceFanoutTests
         sut.Dispatch(new ChangeGroupDelta("mic1.mute", JToken.FromObject(true), null, null));
 
         muteFired.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Trigger_tag_dispatches_to_trigger_service_when_registry_is_supplied()
+    {
+        using CommandQueue queue = NewQueue();
+        var channels = new AudioChannelRegistry("dsp-1");
+        var zones = new AudioZoneRegistry("dsp-1");
+        var triggers = new LogicTriggerRegistry("dsp-1");
+        triggers.Register("rec", "rec.start");
+
+        var ids = new IdGenerator();
+        var routing = new AudioRoutingService("dsp-1", channels, queue, ids);
+        var zone = new AudioZoneEnableService("dsp-1", zones, queue, ids);
+        var trigger = new LogicTriggerService("dsp-1", triggers, queue, ids);
+        var audio = new AudioControlService("dsp-1", channels, new LevelScaler("dsp-1"), queue, ids);
+
+        var sut = new AudioControlServiceFanout(channels, zones, triggers, routing, zone, trigger, audio);
+
+        bool triggerFired = false;
+        trigger.LogicTriggerStateChanged += (_, _) => triggerFired = true;
+
+        sut.Dispatch(new ChangeGroupDelta("rec.start", JToken.FromObject(true), null, null));
+
+        triggerFired.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Tag_registered_as_both_trigger_and_audio_level_dispatches_to_trigger()
+    {
+        // Designer-side configuration error: the precedence is
+        // router → zone → trigger → audio, so a tag claimed by both
+        // a trigger and a channel's levelTag fires the trigger event,
+        // not the audio level event.
+        using CommandQueue queue = NewQueue();
+        var channels = new AudioChannelRegistry("dsp-1");
+        var zones = new AudioZoneRegistry("dsp-1");
+        var triggers = new LogicTriggerRegistry("dsp-1");
+        channels.RegisterInput(new AudioChannel(
+            "mic1", "shared.tag", "mic1.mute", -80, 0, true, 0, 1, NoTags));
+        triggers.Register("rec", "shared.tag");
+
+        var ids = new IdGenerator();
+        var routing = new AudioRoutingService("dsp-1", channels, queue, ids);
+        var zone = new AudioZoneEnableService("dsp-1", zones, queue, ids);
+        var trigger = new LogicTriggerService("dsp-1", triggers, queue, ids);
+        var audio = new AudioControlService("dsp-1", channels, new LevelScaler("dsp-1"), queue, ids);
+
+        var sut = new AudioControlServiceFanout(channels, zones, triggers, routing, zone, trigger, audio);
+
+        bool triggerFired = false;
+        bool audioFired = false;
+        trigger.LogicTriggerStateChanged += (_, _) => triggerFired = true;
+        audio.AudioInputLevelChanged += (_, _) => audioFired = true;
+
+        sut.Dispatch(new ChangeGroupDelta("shared.tag", JToken.FromObject(true), null, null));
+
+        triggerFired.Should().BeTrue();
+        audioFired.Should().BeFalse();
     }
 
     [Fact]

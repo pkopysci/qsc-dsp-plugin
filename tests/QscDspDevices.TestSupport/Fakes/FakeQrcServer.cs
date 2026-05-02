@@ -47,6 +47,9 @@ public sealed class FakeQrcServer : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly ConcurrentDictionary<int, ClientSession> _clients = new();
     private readonly object _failureLock = new();
+    private readonly object _receivedLock = new();
+    private readonly List<ReceivedFrame> _receivedFramesList = new();
+    private readonly Dictionary<long, string> _autoPollIdsByGroup = new();
 
     private Task? _acceptLoop;
     private int _delayMs;
@@ -142,6 +145,66 @@ public sealed class FakeQrcServer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Returns a snapshot of every JSON-RPC request the server has
+    /// received across all clients, in arrival order. Test diagnostics;
+    /// the M3 integration suite asserts on the wire-format of
+    /// Control.Set / Snapshot.Load / ChangeGroup.* calls.
+    /// </summary>
+    /// <returns>The frames recorded so far.</returns>
+    public IReadOnlyList<ReceivedFrame> GetReceivedFrames()
+    {
+        lock (_receivedLock)
+        {
+            return _receivedFramesList.ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Pushes an AutoPoll-style delta to every connected client whose
+    /// session has registered an AutoPoll request for the given group.
+    /// The push reuses the AutoPoll id (per <c>research/QRC_PROTOCOL.md</c>
+    /// §5) so the dispatcher routes it through the same subscription.
+    /// </summary>
+    /// <param name="groupId">The change-group id.</param>
+    /// <param name="changes">The deltas to push (Name + Value pairs).</param>
+    /// <exception cref="ArgumentNullException">If any argument is null.</exception>
+    /// <returns>A <see cref="Task"/> that completes when the push has been sent to every connected client.</returns>
+    public async Task PushAutoPollDeltaAsync(string groupId, IReadOnlyList<(string Name, object Value)> changes)
+    {
+        ArgumentNullException.ThrowIfNull(groupId);
+        ArgumentNullException.ThrowIfNull(changes);
+
+        long[] ids;
+        lock (_receivedLock)
+        {
+            ids = _autoPollIdsByGroup.Where(kv => string.Equals(kv.Value, groupId, StringComparison.Ordinal))
+                .Select(kv => kv.Key)
+                .ToArray();
+        }
+
+        object[] changeArray = changes.Select(c => (object)new { c.Name, c.Value }).ToArray();
+        foreach (long id in ids)
+        {
+            var payload = new
+            {
+                jsonrpc = "2.0",
+                id,
+                result = new
+                {
+                    Id = groupId,
+                    Changes = changeArray
+                },
+            };
+
+            string json = JsonConvert.SerializeObject(payload);
+            foreach ((int _, ClientSession client) in _clients)
+            {
+                await client.SendRawAsync(json).ConfigureAwait(false);
+            }
+        }
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {
@@ -186,6 +249,21 @@ public sealed class FakeQrcServer : IDisposable
     }
 
     internal void OnFrameReceived() => Interlocked.Increment(ref _receivedFrames);
+
+    internal void RecordReceived(string method, JToken? @params, long? id)
+    {
+        lock (_receivedLock)
+        {
+            _receivedFramesList.Add(new ReceivedFrame(method, @params, id));
+            if (string.Equals(method, "ChangeGroup.AutoPoll", StringComparison.Ordinal)
+                && id.HasValue
+                && @params is JObject obj
+                && obj["Id"]?.ToString() is { } gid)
+            {
+                _autoPollIdsByGroup[id.Value] = gid;
+            }
+        }
+    }
 
     internal (int DelayMs, bool MalformedNow, bool Standby) SnapshotFailure()
     {
@@ -351,6 +429,25 @@ public sealed class FakeQrcServer : IDisposable
             }
         }
 
+        internal async Task SendRawAsync(string json)
+        {
+            byte[] payload = Encoding.UTF8.GetBytes(json);
+            try
+            {
+                await _stream.WriteAsync(payload.AsMemory(), _serverCancellation).ConfigureAwait(false);
+                await _stream.WriteAsync(new byte[] { FrameTerminator }.AsMemory(), _serverCancellation).ConfigureAwait(false);
+                await _stream.FlushAsync(_serverCancellation).ConfigureAwait(false);
+            }
+            catch (IOException)
+            {
+                // Client gone.
+            }
+            catch (ObjectDisposedException)
+            {
+                // Client gone.
+            }
+        }
+
         private async Task HandleFrameAsync(string json)
         {
             _server.OnFrameReceived();
@@ -368,6 +465,8 @@ public sealed class FakeQrcServer : IDisposable
             long? id = request.Value<long?>("id");
             string method = request.Value<string?>("method") ?? string.Empty;
             JToken? @params = request["params"];
+
+            _server.RecordReceived(method, @params, id);
 
             (int DelayMs, bool MalformedNow, bool Standby) failure = _server.SnapshotFailure();
             if (failure.DelayMs > 0)
@@ -512,25 +611,6 @@ public sealed class FakeQrcServer : IDisposable
                 @params,
             });
             return SendRawAsync(json);
-        }
-
-        private async Task SendRawAsync(string json)
-        {
-            byte[] payload = Encoding.UTF8.GetBytes(json);
-            try
-            {
-                await _stream.WriteAsync(payload.AsMemory(), _serverCancellation).ConfigureAwait(false);
-                await _stream.WriteAsync(new byte[] { FrameTerminator }.AsMemory(), _serverCancellation).ConfigureAwait(false);
-                await _stream.FlushAsync(_serverCancellation).ConfigureAwait(false);
-            }
-            catch (IOException)
-            {
-                // Client gone.
-            }
-            catch (ObjectDisposedException)
-            {
-                // Client gone.
-            }
         }
     }
 }

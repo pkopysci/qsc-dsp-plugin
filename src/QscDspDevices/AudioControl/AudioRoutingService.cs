@@ -19,9 +19,21 @@ namespace QscDspDevices.AudioControl;
 /// <remarks>
 /// <para>
 /// Sibling of <see cref="AudioControlService"/>; the cache semantics
-/// are identical (Set updates cache before/regardless of queue accept;
-/// AutoPoll reconciles). The bank-index ↔ channel-id translation is
-/// done via <see cref="AudioChannelRegistry.TryGetInputIdByBankIndex"/>.
+/// are identical — see that type's "intent semantics" remarks. The
+/// bank-index ↔ channel-id translation is done via
+/// <see cref="AudioChannelRegistry.TryGetInputIdByBankIndex"/>.
+/// </para>
+/// <para>
+/// <b>Cache semantics — intent, not state.</b> <see cref="Route"/> and
+/// <see cref="Clear"/> update the cache <i>before</i> attempting
+/// <c>TryEnqueue</c>. While disconnected, the queue silently refuses
+/// the wire write; the cache still reflects the framework's most
+/// recent intent. On reconnect the AutoPoll on the routerTag replays
+/// the Core's real value, and the cache reconciles (raising
+/// <see cref="RouteChanged"/> if the Core's reality disagrees with
+/// the cached intent). Framework-side reads via
+/// <see cref="GetCurrentSource"/> during the disconnected window
+/// therefore reflect intent, not server state.
 /// </para>
 /// </remarks>
 public sealed class AudioRoutingService
@@ -89,6 +101,19 @@ public sealed class AudioRoutingService
         if (!_registry.TryGetChannel(sourceId, out AudioChannel? source) || source is null || !source.IsInput)
         {
             Log.Error(_deviceId, $"RouteAudio called with unknown source id '{sourceId}'.");
+            return;
+        }
+
+        // BankIndex 0 is the QSC "no source" sentinel (see Clear). A
+        // source registered with bankIndex <= 0 cannot be routed because
+        // it would clear the output instead. Reject explicitly so
+        // misconfigured inputs surface as Logger.Error rather than as
+        // a silent route-then-clear that disagrees with the cache.
+        if (source.BankIndex < 1)
+        {
+            Log.Error(
+                _deviceId,
+                $"RouteAudio('{sourceId}', '{outputId}') — source bankIndex {source.BankIndex} is invalid (must be >= 1; bankIndex 0 is the QSC 'cleared' sentinel).");
             return;
         }
 
@@ -191,7 +216,20 @@ public sealed class AudioRoutingService
 
     private void UpdateCacheAndRaise(string outputId, string newSourceId)
     {
-        bool changed = !_outputToSource.TryGetValue(outputId, out string? prior) || !string.Equals(prior, newSourceId, StringComparison.Ordinal);
+        bool hadPrior = _outputToSource.TryGetValue(outputId, out string? prior);
+
+        // First-write of an empty source for a never-cached output is
+        // a no-op transition: the cache implicitly returns "" for unknown
+        // outputs (see GetCurrentSource), so going from "implicit empty"
+        // to "explicit empty" is not an observable change and must NOT
+        // raise the event. This matters most for Clear() against an
+        // output that was never routed since Connect.
+        if (!hadPrior && string.IsNullOrEmpty(newSourceId))
+        {
+            return;
+        }
+
+        bool changed = !hadPrior || !string.Equals(prior, newSourceId, StringComparison.Ordinal);
         _outputToSource[outputId] = newSourceId;
 
         if (!changed)

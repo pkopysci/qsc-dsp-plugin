@@ -203,6 +203,22 @@ public sealed class AudioChannelRegistryTests
     }
 
     [Fact]
+    public void Two_channels_claiming_the_same_levelTag_logs_warn_and_overwrites()
+    {
+        // Designer-side configuration error: two channels declare the
+        // same Q-SYS named control as their levelTag. Without
+        // detection, AutoPoll deltas on this tag silently dispatch
+        // to the wrong owner. Pin the warn-on-collision behaviour.
+        var sut = new AudioChannelRegistry("dsp-1");
+        sut.RegisterInput(new AudioChannel("mic1", "shared.tag", "mic1.mute", -80, 0, true, 0, 1, NoTags));
+        sut.RegisterInput(new AudioChannel("mic2", "shared.tag", "mic2.mute", -80, 0, true, 0, 2, NoTags));
+
+        // Reverse map last-writer-wins; mic2 owns the tag now.
+        sut.TryGetChannelIdByTag("shared.tag", out string? owner).Should().BeTrue();
+        owner.Should().Be("mic2");
+    }
+
+    [Fact]
     public void Re_registering_output_with_new_routerTag_remaps_the_router_set()
     {
         var sut = new AudioChannelRegistry("dsp-1");

@@ -402,7 +402,7 @@ public sealed class ConnectionManager : IDisposable
             {
                 foreach (string frame in framer.Append(args.Arg.Span))
                 {
-                    _dispatcher.Dispatch(frame);
+                    DispatchFrameSafely(frame);
                 }
             }
             catch (FrameTooLargeException ex)
@@ -431,6 +431,33 @@ public sealed class ConnectionManager : IDisposable
 
     private ValueTask<bool> EnqueueAsync(JsonRpcRequest request)
         => ValueTask.FromResult(_queue.TryEnqueue(request));
+
+    /// <summary>
+    /// Wraps a single <see cref="JsonRpcDispatcher.Dispatch"/> call so a
+    /// misbehaving framework-side event subscriber (which the rx-thread
+    /// chain ultimately invokes synchronously through the AutoPoll
+    /// fanout) cannot escape and propagate into the
+    /// <c>BasicTcpClient</c> rx event chain — that would crash the
+    /// host, violating the README's "the plugin must not crash the
+    /// host" rule.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Per README §\"Exception Handling\", the plugin must not crash the host. The rx-thread chain ultimately invokes user-code event handlers (IAudioControl, IAudioRoutable, IAudioZoneEnabler, IDspLogicTriggerSupport); a throw from any of those would otherwise escape into the BasicTcpClient rx callback. Log Error and continue.")]
+    private void DispatchFrameSafely(string frame)
+    {
+        try
+        {
+            _dispatcher.Dispatch(frame);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(
+                _deviceId,
+                $"Inbound frame dispatch threw {ex.GetType().Name}: {ex.Message}. Continuing on the receive thread.");
+        }
+    }
 
     private async Task RunKeepaliveLoopAsync(CancellationToken cancellationToken)
     {

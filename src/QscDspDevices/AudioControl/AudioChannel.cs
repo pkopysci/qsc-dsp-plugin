@@ -21,4 +21,5 @@ public sealed record AudioChannel(
     bool IsInput,
     int RouterIndex,
     int BankIndex,
-    IReadOnlyList<string> Tags);
+    IReadOnlyList<string> Tags,
+    string RouterTag = "");

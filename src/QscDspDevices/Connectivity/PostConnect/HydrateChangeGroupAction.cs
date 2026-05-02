@@ -31,6 +31,7 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
 {
     private readonly string _deviceId;
     private readonly AudioChannelRegistry _registry;
+    private readonly AudioZoneRegistry? _zoneRegistry;
     private readonly ChangeGroupManager _groupManager;
     private readonly CommandQueue _queue;
     private readonly JsonRpcDispatcher _dispatcher;
@@ -53,6 +54,32 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
         CommandQueue queue,
         JsonRpcDispatcher dispatcher,
         LogonAction? logon)
+        : this(deviceId, registry, zoneRegistry: null, groupManager, queue, dispatcher, logon)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="HydrateChangeGroupAction"/> class
+    /// with M4 zone-registry support — the zone-enable controlTags are
+    /// added to the change-group subscription list alongside the M3
+    /// level/mute/router tags.
+    /// </summary>
+    /// <param name="deviceId">The owning device id.</param>
+    /// <param name="registry">The channel registry.</param>
+    /// <param name="zoneRegistry">The optional zone registry; null when M4 is not yet wired.</param>
+    /// <param name="groupManager">The change-group manager.</param>
+    /// <param name="queue">The command queue.</param>
+    /// <param name="dispatcher">The JSON-RPC dispatcher.</param>
+    /// <param name="logon">Optional Logon action whose completion this action waits on.</param>
+    /// <exception cref="ArgumentNullException">If any required argument is null.</exception>
+    public HydrateChangeGroupAction(
+        string deviceId,
+        AudioChannelRegistry registry,
+        AudioZoneRegistry? zoneRegistry,
+        ChangeGroupManager groupManager,
+        CommandQueue queue,
+        JsonRpcDispatcher dispatcher,
+        LogonAction? logon)
     {
         ArgumentNullException.ThrowIfNull(deviceId);
         ArgumentNullException.ThrowIfNull(registry);
@@ -62,6 +89,7 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
 
         _deviceId = deviceId;
         _registry = registry;
+        _zoneRegistry = zoneRegistry;
         _groupManager = groupManager;
         _queue = queue;
         _dispatcher = dispatcher;
@@ -84,9 +112,12 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
         }
 
         IReadOnlyList<AudioChannel> channels = _registry.GetAllChannels();
-        if (channels.Count == 0)
+        IReadOnlyList<(string ChannelId, string ZoneId, string ControlTag)> zones =
+            _zoneRegistry?.GetAll() ?? Array.Empty<(string, string, string)>();
+
+        if (channels.Count == 0 && zones.Count == 0)
         {
-            Log.Notice(_deviceId, "No audio channels registered; skipping change-group subscribe.");
+            Log.Notice(_deviceId, "No audio channels or zone enables registered; skipping change-group subscribe.");
             return;
         }
 
@@ -103,6 +134,28 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
 
             JsonRpcRequest? addMute = _groupManager.BuildAddControl(ChangeGroupManager.PluginGroupId, channel.MuteTag);
             if (addMute is not null && _queue.TryEnqueue(addMute))
+            {
+                subscribed++;
+            }
+
+            // M4: subscribe the output's routerTag (when configured).
+            // Inputs and routerless outputs have an empty RouterTag.
+            if (!channel.IsInput && !string.IsNullOrEmpty(channel.RouterTag))
+            {
+                JsonRpcRequest? addRouter = _groupManager.BuildAddControl(ChangeGroupManager.PluginGroupId, channel.RouterTag);
+                if (addRouter is not null && _queue.TryEnqueue(addRouter))
+                {
+                    subscribed++;
+                }
+            }
+        }
+
+        // M4: subscribe every (channelId, zoneId) pair's controlTag.
+        foreach ((string _, string _, string controlTag) in zones)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            JsonRpcRequest? addZone = _groupManager.BuildAddControl(ChangeGroupManager.PluginGroupId, controlTag);
+            if (addZone is not null && _queue.TryEnqueue(addZone))
             {
                 subscribed++;
             }

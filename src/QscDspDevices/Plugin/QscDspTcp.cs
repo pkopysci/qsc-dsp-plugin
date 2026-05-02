@@ -57,6 +57,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     private readonly IQrcClock _clock;
     private readonly ThreadCensus _threadCensus;
     private readonly AudioChannelRegistry _registry;
+    private readonly AudioZoneRegistry _zoneRegistry;
     private readonly object _credentialsLock = new();
 
     private LogonCredentials _credentials = LogonCredentials.Empty;
@@ -66,6 +67,8 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     private ConnectionManager? _connectionManager;
     private AudioControlService? _audioService;
     private PresetService? _presetService;
+    private AudioRoutingService? _routingService;
+    private AudioZoneEnableService? _zoneEnableService;
     private bool _disposed;
 
     /// <summary>
@@ -100,15 +103,18 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         // composition order is config-driven, not framework-mandated).
         _registry = new AudioChannelRegistry("QscDspTcp");
 
+        // Same rationale for the M4 zone registry — AddAudioZoneEnable
+        // can land before Initialize.
+        _zoneRegistry = new AudioZoneRegistry("QscDspTcp");
+
         Manufacturer = "QSC";
         Model = "Q-SYS Core";
     }
 
-    // M3 raises the four IAudioControl events via AudioControlService;
-    // the M4-M6 events (route, zone, logic, redundancy) are still
-    // declared but unraised, so the CS0067 pragma is narrowed to that
-    // group. Each subsequent milestone invokes the events it owns and
-    // the suppression naturally shrinks until M7 retires it.
+    // M3 raises the four IAudioControl events; M4 raises the routing
+    // and zone-enable events. The remaining M5/M6 events (logic and
+    // redundancy) are declared but unraised, so the CS0067 pragma is
+    // narrowed to just that pair. M7 retires the suppression entirely.
 
     /// <inheritdoc />
     public event EventHandler<GenericDualEventArgs<string, string>>? AudioInputLevelChanged;
@@ -122,13 +128,13 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     /// <inheritdoc />
     public event EventHandler<GenericDualEventArgs<string, string>>? AudioOutputMuteChanged;
 
-#pragma warning disable CS0067 // Event raised in a later milestone — see the M3 design.md.
-
     /// <inheritdoc />
     public event EventHandler<GenericDualEventArgs<string, string>>? AudioRouteChanged;
 
     /// <inheritdoc />
     public event EventHandler<GenericDualEventArgs<string, string>>? AudioZoneEnableChanged;
+
+#pragma warning disable CS0067 // Event raised in a later milestone — see the M5/M6 design notes.
 
     /// <inheritdoc />
     public event EventHandler<GenericSingleEventArgs<string>>? DspLogicTriggerStateChanged;
@@ -189,16 +195,23 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         var groupManager = new ChangeGroupManager(hostId, ids);
         var audioService = new AudioControlService(hostId, _registry, scaler, queue, ids);
         var presetService = new PresetService(hostId, _registry, queue, ids);
+        var routingService = new AudioRoutingService(hostId, _registry, queue, ids);
+        var zoneService = new AudioZoneEnableService(hostId, _zoneRegistry, queue, ids);
+        var fanout = new AudioControlServiceFanout(_registry, _zoneRegistry, routingService, zoneService, audioService);
 
-        groupManager.SetDeltaCallback(audioService.OnDeviceUpdate);
+        groupManager.SetDeltaCallback(fanout.Dispatch);
 
-        // Forward the AudioControlService events to QscDspTcp's own
+        // Forward the M3 AudioControlService events to QscDspTcp's own
         // surface — the framework calls IAudioControl.* events on the
         // public class, not the inner service.
         audioService.AudioInputLevelChanged += (_, args) => AudioInputLevelChanged?.Invoke(this, args);
         audioService.AudioInputMuteChanged += (_, args) => AudioInputMuteChanged?.Invoke(this, args);
         audioService.AudioOutputLevelChanged += (_, args) => AudioOutputLevelChanged?.Invoke(this, args);
         audioService.AudioOutputMuteChanged += (_, args) => AudioOutputMuteChanged?.Invoke(this, args);
+
+        // M4: forward the routing + zone-enable events likewise.
+        routingService.RouteChanged += (_, args) => AudioRouteChanged?.Invoke(this, args);
+        zoneService.ZoneEnableChanged += (_, args) => AudioZoneEnableChanged?.Invoke(this, args);
 
         var logon = new LogonAction(
             hostId,
@@ -213,7 +226,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
             dispatcher,
             ids);
 
-        var hydrate = new HydrateChangeGroupAction(hostId, _registry, groupManager, queue, dispatcher, logon);
+        var hydrate = new HydrateChangeGroupAction(hostId, _registry, _zoneRegistry, groupManager, queue, dispatcher, logon);
         var postConnect = new CompositePostConnectAction(new IPostConnectAction[] { logon, hydrate });
 
         var manager = new ConnectionManager(
@@ -235,6 +248,8 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         _connectionManager = manager;
         _audioService = audioService;
         _presetService = presetService;
+        _routingService = routingService;
+        _zoneEnableService = zoneService;
         IsInitialized = true;
 
         Log.Notice(Id, $"Initialized for {hostname}:{port} (coreId={coreId}).");
@@ -363,14 +378,9 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         ParameterValidator.ThrowIfNullOrEmpty(levelTag, nameof(AddOutputChannel), nameof(levelTag));
         ParameterValidator.ThrowIfNullOrEmpty(muteTag, nameof(AddOutputChannel), nameof(muteTag));
 
-        // routerTag is captured for M4 — used by the matrix routing
-        // implementation when it lands. For M3 we register the channel
-        // and ignore the tag.
-        _ = routerTag;
-
         IReadOnlyList<string> tagList = tags?.ToArray() ?? (IReadOnlyList<string>)Array.Empty<string>();
         _registry.RegisterOutput(new AudioChannel(
-            id, levelTag, muteTag, levelMin, levelMax, false, routerIndex, bankIndex, tagList));
+            id, levelTag, muteTag, levelMin, levelMax, false, routerIndex, bankIndex, tagList, routerTag ?? string.Empty));
     }
 
     /// <inheritdoc />
@@ -385,7 +395,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     public string GetCurrentAudioSource(string outputId)
     {
         ParameterValidator.ThrowIfNullOrEmpty(outputId, nameof(GetCurrentAudioSource), nameof(outputId));
-        return string.Empty;
+        return _routingService?.GetCurrentSource(outputId) ?? string.Empty;
     }
 
     /// <inheritdoc />
@@ -393,14 +403,14 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     {
         ParameterValidator.ThrowIfNullOrEmpty(sourceId, nameof(RouteAudio), nameof(sourceId));
         ParameterValidator.ThrowIfNullOrEmpty(outputId, nameof(RouteAudio), nameof(outputId));
-        Log.Notice(Id, $"RouteAudio('{sourceId}' -> '{outputId}') — not implemented in M2 (lands in M4).");
+        _routingService?.Route(sourceId, outputId);
     }
 
     /// <inheritdoc />
     public void ClearAudioRoute(string outputId)
     {
         ParameterValidator.ThrowIfNullOrEmpty(outputId, nameof(ClearAudioRoute), nameof(outputId));
-        Log.Notice(Id, $"ClearAudioRoute('{outputId}') — not implemented in M2 (lands in M4).");
+        _routingService?.Clear(outputId);
     }
 
     /// <inheritdoc />
@@ -408,7 +418,8 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     {
         ParameterValidator.ThrowIfNullOrEmpty(channelId, nameof(AddAudioZoneEnable), nameof(channelId));
         ParameterValidator.ThrowIfNullOrEmpty(zoneId, nameof(AddAudioZoneEnable), nameof(zoneId));
-        Log.Notice(Id, $"AddAudioZoneEnable('{channelId}','{zoneId}') — not implemented in M2 (lands in M4).");
+        ParameterValidator.ThrowIfNullOrEmpty(controlTag, nameof(AddAudioZoneEnable), nameof(controlTag));
+        _zoneRegistry.TryRegister(channelId, zoneId, controlTag);
     }
 
     /// <inheritdoc />
@@ -416,6 +427,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     {
         ParameterValidator.ThrowIfNullOrEmpty(channelId, nameof(RemoveAudioZoneEnable), nameof(channelId));
         ParameterValidator.ThrowIfNullOrEmpty(zoneId, nameof(RemoveAudioZoneEnable), nameof(zoneId));
+        _zoneRegistry.Remove(channelId, zoneId);
     }
 
     /// <inheritdoc />
@@ -423,6 +435,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     {
         ParameterValidator.ThrowIfNullOrEmpty(channelId, nameof(ToggleAudioZoneEnable), nameof(channelId));
         ParameterValidator.ThrowIfNullOrEmpty(zoneId, nameof(ToggleAudioZoneEnable), nameof(zoneId));
+        _zoneEnableService?.Toggle(channelId, zoneId);
     }
 
     /// <inheritdoc />
@@ -430,6 +443,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     {
         ParameterValidator.ThrowIfNullOrEmpty(channelId, nameof(SetAudioZoneEnable), nameof(channelId));
         ParameterValidator.ThrowIfNullOrEmpty(zoneId, nameof(SetAudioZoneEnable), nameof(zoneId));
+        _zoneEnableService?.Set(channelId, zoneId, enable);
     }
 
     /// <inheritdoc />
@@ -437,7 +451,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     {
         ParameterValidator.ThrowIfNullOrEmpty(channelId, nameof(QueryAudioZoneEnable), nameof(channelId));
         ParameterValidator.ThrowIfNullOrEmpty(zoneId, nameof(QueryAudioZoneEnable), nameof(zoneId));
-        return false;
+        return _zoneEnableService?.Query(channelId, zoneId) ?? false;
     }
 
     /// <inheritdoc />

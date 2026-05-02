@@ -25,6 +25,8 @@ public sealed class AudioChannelRegistry
     private readonly Dictionary<string, AudioChannel> _channels = new();
     private readonly Dictionary<string, AudioPreset> _presets = new();
     private readonly Dictionary<string, string> _tagToChannelId = new();
+    private readonly Dictionary<int, string> _inputBankIndexToChannelId = new();
+    private readonly HashSet<string> _routerTags = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AudioChannelRegistry"/> class.
@@ -188,6 +190,41 @@ public sealed class AudioChannelRegistry
         }
     }
 
+    /// <summary>
+    /// Tries to look up an input channel by its registered bank index.
+    /// Used by <see cref="AudioRoutingService"/> when an AutoPoll
+    /// delta on a routerTag carries the integer source-select value
+    /// the matrix mixer reports — the value is a bank index, and we
+    /// need the framework channel id back.
+    /// </summary>
+    /// <param name="bankIndex">The bank index to look up.</param>
+    /// <param name="channelId">The owning input channel id, if any.</param>
+    /// <returns><c>true</c> when an input has this bank index.</returns>
+    public bool TryGetInputIdByBankIndex(int bankIndex, out string? channelId)
+    {
+        lock (_lock)
+        {
+            return _inputBankIndexToChannelId.TryGetValue(bankIndex, out channelId);
+        }
+    }
+
+    /// <summary>
+    /// Indicates whether the supplied control name was registered as
+    /// an output's <c>routerTag</c>. Used by the AutoPoll fan-out
+    /// dispatcher to route deltas to <see cref="AudioRoutingService"/>
+    /// in O(1) without scanning the channel map.
+    /// </summary>
+    /// <param name="tag">The control name from an AutoPoll delta.</param>
+    /// <returns><c>true</c> when this tag belongs to an output's router.</returns>
+    public bool IsRouterTag(string tag)
+    {
+        ArgumentNullException.ThrowIfNull(tag);
+        lock (_lock)
+        {
+            return _routerTags.Contains(tag);
+        }
+    }
+
     private void Register(AudioChannel channel)
     {
         lock (_lock)
@@ -197,11 +234,42 @@ public sealed class AudioChannelRegistry
                 Log.Notice(_deviceId, $"Re-registering channel '{channel.Id}'.");
                 _tagToChannelId.Remove(existing.LevelTag);
                 _tagToChannelId.Remove(existing.MuteTag);
+
+                if (existing.IsInput)
+                {
+                    // Drop the prior bank-index entry — the same id may
+                    // re-register with a new bankIndex on a config refresh,
+                    // and the routing service must not see two ids claim
+                    // the same bank.
+                    _inputBankIndexToChannelId.Remove(existing.BankIndex);
+                }
+                else
+                {
+                    // Outputs may have re-registered with a different
+                    // routerTag (the framework's surface allows per-call
+                    // changes). Drop the stale router-tag entry; the new
+                    // one is added below if non-empty.
+                    if (!string.IsNullOrEmpty(existing.RouterTag))
+                    {
+                        _routerTags.Remove(existing.RouterTag);
+                        _tagToChannelId.Remove(existing.RouterTag);
+                    }
+                }
             }
 
             _channels[channel.Id] = channel;
             _tagToChannelId[channel.LevelTag] = channel.Id;
             _tagToChannelId[channel.MuteTag] = channel.Id;
+
+            if (channel.IsInput)
+            {
+                _inputBankIndexToChannelId[channel.BankIndex] = channel.Id;
+            }
+            else if (!string.IsNullOrEmpty(channel.RouterTag))
+            {
+                _routerTags.Add(channel.RouterTag);
+                _tagToChannelId[channel.RouterTag] = channel.Id;
+            }
         }
     }
 }

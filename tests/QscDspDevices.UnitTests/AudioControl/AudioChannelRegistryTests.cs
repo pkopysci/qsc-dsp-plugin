@@ -148,4 +148,70 @@ public sealed class AudioChannelRegistryTests
         Action act = () => _ = new AudioChannelRegistry(null!);
         act.Should().Throw<ArgumentNullException>();
     }
+
+    [Fact]
+    public void TryGetInputIdByBankIndex_returns_the_owning_input_id()
+    {
+        var sut = new AudioChannelRegistry("dsp-1");
+        sut.RegisterInput(new AudioChannel("mic1", "lvl1", "mute1", -80, 0, true, 0, 5, NoTags));
+        sut.RegisterInput(new AudioChannel("mic2", "lvl2", "mute2", -80, 0, true, 0, 7, NoTags));
+
+        sut.TryGetInputIdByBankIndex(5, out string? a).Should().BeTrue();
+        a.Should().Be("mic1");
+        sut.TryGetInputIdByBankIndex(7, out string? b).Should().BeTrue();
+        b.Should().Be("mic2");
+        sut.TryGetInputIdByBankIndex(99, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Re_registering_input_with_new_bankIndex_remaps_the_reverse_table()
+    {
+        var sut = new AudioChannelRegistry("dsp-1");
+        sut.RegisterInput(new AudioChannel("mic1", "lvl", "mute", -80, 0, true, 0, 5, NoTags));
+        sut.RegisterInput(new AudioChannel("mic1", "lvl", "mute", -80, 0, true, 0, 9, NoTags));
+
+        // The old bank-index entry is gone; the new one points at mic1.
+        sut.TryGetInputIdByBankIndex(5, out _).Should().BeFalse();
+        sut.TryGetInputIdByBankIndex(9, out string? viaNew).Should().BeTrue();
+        viaNew.Should().Be("mic1");
+    }
+
+    [Fact]
+    public void IsRouterTag_is_true_only_for_a_registered_output_routerTag()
+    {
+        var sut = new AudioChannelRegistry("dsp-1");
+        sut.RegisterOutput(new AudioChannel(
+            "out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags, "mixer.out1.source"));
+        sut.RegisterInput(new AudioChannel("mic1", "lvl", "mute", -80, 0, true, 0, 0, NoTags));
+
+        sut.IsRouterTag("mixer.out1.source").Should().BeTrue();
+        sut.IsRouterTag("mic1.gain").Should().BeFalse();
+        sut.IsRouterTag("out1.gain").Should().BeFalse();
+        sut.IsRouterTag("never-registered").Should().BeFalse();
+    }
+
+    [Fact]
+    public void Output_without_routerTag_is_not_a_router_tag_owner()
+    {
+        var sut = new AudioChannelRegistry("dsp-1");
+        sut.RegisterOutput(new AudioChannel(
+            "out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags, string.Empty));
+
+        // The empty-string routerTag must not register as one — otherwise
+        // every AutoPoll delta with an empty Name would dispatch to routing.
+        sut.IsRouterTag(string.Empty).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Re_registering_output_with_new_routerTag_remaps_the_router_set()
+    {
+        var sut = new AudioChannelRegistry("dsp-1");
+        sut.RegisterOutput(new AudioChannel(
+            "out1", "lvl", "mute", -100, 0, false, 0, 0, NoTags, "old.router"));
+        sut.RegisterOutput(new AudioChannel(
+            "out1", "lvl", "mute", -100, 0, false, 0, 0, NoTags, "new.router"));
+
+        sut.IsRouterTag("old.router").Should().BeFalse();
+        sut.IsRouterTag("new.router").Should().BeTrue();
+    }
 }

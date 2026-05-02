@@ -131,8 +131,11 @@ Each (re)connect runs a `CompositePostConnectAction` of two steps:
 2. **`HydrateChangeGroupAction`** — awaits Logon completion (when
    present), then for every channel registered via
    `AudioChannelRegistry`, enqueues `ChangeGroup.AddControl` for the
-   level-tag and the mute-tag, registers the AutoPoll id with the
-   dispatcher, and enqueues `ChangeGroup.AutoPoll` at 250 ms.
+   level-tag, mute-tag, and (M4) the output's `routerTag` when
+   non-empty. Also (M4) enqueues `AddControl` for every
+   `(channelId, zoneId)` row in `AudioZoneRegistry`. Then registers
+   the AutoPoll id with the dispatcher and enqueues
+   `ChangeGroup.AutoPoll` at 250 ms.
 
 The Core's AutoPoll responses then drive `AudioControlService` cache
 updates and the `IAudioControl` event surface.

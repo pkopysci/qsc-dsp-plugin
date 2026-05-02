@@ -157,7 +157,7 @@ public sealed class AudioZoneEnableService
 
     private void UpdateCacheAndRaise(string channelId, string zoneId, bool newEnable)
     {
-        var key = (channelId, zoneId);
+        (string ChannelId, string ZoneId) key = (channelId, zoneId);
         bool changed = !_cache.TryGetValue(key, out bool prior) || prior != newEnable;
         _cache[key] = newEnable;
 

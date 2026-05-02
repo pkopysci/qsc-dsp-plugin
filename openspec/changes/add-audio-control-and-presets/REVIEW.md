@@ -44,3 +44,45 @@
 - Long-running stability (the `_autoPolls` leak is reasoned, not measured).
 - ECP backend (untouched by M3).
 - `dotnet format --verify-no-changes` — assumed from task notes.
+
+## Pass 2
+
+**Verdict:** ✅ ship-ready
+
+**Quality gates (re-run locally):** Release build `-warnaserror` 0/0; `dotnet format --verify-no-changes` clean; full `dotnet test` matrix 248/248 across 5 consecutive integration-test runs; the first composite run reported a single integration-test failure (1/8) that did not reproduce in 5 follow-up runs and is consistent with the Pass-1 nit about wall-clock spinners — kept as a concern, not a blocker. Coverage on `QscDspDevices.dll`: 91.2 % line / 80.5 % branch / 95.2 % method (above the 90 % gate). Release DLL 86,528 B / 500 KB.
+
+### Blockers resolved
+
+- **B1 — RedactingDebugFormatter wiring.** `Connectivity/ConnectionManager.cs:504` now calls `Log.Debug(_deviceId, RedactingDebugFormatter.Format(request))` immediately before `_transport.Send(payload)`. Production path covered; the existing formatter unit tests pin redaction shape. Resolved.
+- **B2 — `_autoPolls` leak.** `JsonRpcDispatcher.ClearAutoPolls()` returns the cleared count and is called from `CleanupAfterDisconnect` (`ConnectionManager.cs:621`). Two new unit tests pin the drop and the empty-case (`JsonRpcDispatcherTests.cs:159, :182`). Resolved.
+
+### Concerns resolved
+
+- **C1 — cache contract.** `AudioControlService` XML `<remarks>` (lines 20-34) explicitly documents "intent, not state" plus the hydration AutoPoll reconciliation path. Doc accurately matches the code.
+- **C3 — ThreadCensus on send/keepalive.** Both `RunSendLoopAsync` (line 480) and `RunKeepaliveLoopAsync` (line 439) `Register` on entry and dispose in `finally`. Steady-state Connected = 3 (`session`, `send`, `keepalive`); the receive path is event-driven and is correctly excluded. `Disconnect_releases_the_session_thread_back_to_zero` (`QscDspTcpTests.cs:330-351`) exercises the full join and asserts `AliveCount == 0` after Dispose, which the Pass-1 send/keepalive registrations would have broken if `finally` were missing — so the round-trip to zero is implicitly pinned.
+- **C4 — silent AutoPoll error swallow.** `ChangeGroupManager.HandleAutoPollPush` short-circuits on `response.IsError` with a `Log.Warn` (`ChangeGroupManager.cs:264-271`). Pinned by `OnPush_with_an_error_response_logs_and_skips_the_callback` (`ChangeGroupManagerTests.cs:134-150`) using the documented `-32604 Standby` code.
+
+### New issues found in Pass 2
+
+None blocking. Two observations:
+
+1. **Steady-state-of-3 is not directly asserted.** `ThreadCensus_reports_one_plugin_thread_when_session_is_active` (`QscDspTcpTests.cs:325-326`) only asserts `AliveCount >= 1` and `Snapshot().Should().Contain("session")`. After the C3 fix it should also pin `AliveCount == 3` once Connected with `Snapshot()` containing `send` and `keepalive`. As written, a future regression that drops one of the new registrations would still pass. Add an explicit "after Connected, AliveCount == 3 and snapshot contains send + keepalive" assertion — single line, no new fixture.
+
+2. **Race window between `RxReceived -=` and `ClearAutoPolls` is benign but worth a one-line comment.** `StopIoLoops` detaches the rx handler first, then `ClearAutoPolls` runs. .NET's `-=` does not interrupt in-flight invocations, so a push that entered the dispatcher microseconds earlier may deliver a delta to a still-subscribed callback before the clear lands. The dispatcher's `ConcurrentDictionary` makes this safe; one extra stale callback is tolerable. The reviewer's question is answered: yes the window exists, no it does not corrupt state, and the next-hydration AutoPoll reconciles. Leaving a `// In-flight rx events may deliver one final delta after StopIoLoops returns; benign — dispatcher uses ConcurrentDictionary` comment near `CleanupAfterDisconnect` would head off the next reviewer's identical question.
+
+### Concerns carried over
+
+- **Integration-test wall-clock flake (Pass-1 nit).** A single `Failed: 1/8` blip on the first of three matrix runs, no repro in 5 follow-up runs. Consistent with the Pass-1 nit about `Task.Delay(20)` spinners and 5 s wall-clock deadlines. Not a blocker; remains worth fixing with event-based signalling before M5.
+
+### Praise
+
+- Token-based registration with `try/finally`-Dispose is the correct shape for awaiting Tasks; the comment at `ConnectionManager.cs:475-479` accurately calls out the threadpool-worker rationale.
+- `ClearAutoPolls` returning the count enables the `Log.Notice` at the call site, turning a silent housekeeping step into an observable signal — useful diagnostic for "does this Core flap?" investigations on real hardware.
+- `OnPush_with_an_error_response_logs_and_skips_the_callback` uses the actual standby error code from the QRC research doc rather than a placeholder, which keeps the test honest to the protocol.
+
+### What I did NOT verify
+
+- Mutation testing (still no Stryker run).
+- Behaviour on a real Q-SYS Core.
+- Long-running stability under repeated reconnect cycles (the leak fix is reasoned + unit-pinned, not load-tested).
+- Whether `RedactingDebugFormatter.Format` allocations under sustained debug-on logging affect the keepalive cadence — never measured.

@@ -618,6 +618,13 @@ public sealed class ConnectionManager : IDisposable
         // id; without clearing here, the dispatcher accumulates a stale
         // subscription per reconnect cycle (memory leak + a CA1031-
         // swallowed InvalidOperationException on a future id wrap).
+        // Race: StopIoLoops above detached the rx handler, but .NET's
+        // event -= does not interrupt an in-flight invocation. A push
+        // that entered the dispatcher microseconds earlier may still
+        // deliver a delta to a callback after the rx detach. The
+        // dispatcher's ConcurrentDictionary makes this safe; one stale
+        // delta is tolerable and the next-hydration AutoPoll reconciles
+        // the cache with the Core's actual state.
         int cleared = _dispatcher.ClearAutoPolls();
         if (cleared > 0)
         {

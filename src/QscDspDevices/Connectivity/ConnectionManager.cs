@@ -120,6 +120,13 @@ public sealed class ConnectionManager : IDisposable
     /// </summary>
     public ThreadCensus ThreadCensus => _threadCensus;
 
+    /// <summary>
+    /// Gets the underlying JSON-RPC dispatcher. Exposed for the M6
+    /// <c>RedundantConnectionPair</c> so its <c>EngineStatusObserver</c>
+    /// can subscribe to per-manager <c>NotificationReceived</c> events.
+    /// </summary>
+    public JsonRpcDispatcher Dispatcher => _dispatcher;
+
     /// <summary>Gets the current state of the connection.</summary>
     public ConnectionState State
     {

@@ -33,7 +33,7 @@ namespace QscDspDevices.Protocol;
     "Naming",
     "CA1711:Identifiers should not have incorrect suffix",
     Justification = "The README, OpenSpec proposal, and qsc-critic checklist all refer to this object as the 'command queue'. Renaming to e.g. CommandPipeline would diverge from the spec language and regress audit-friendliness.")]
-public sealed class CommandQueue : IDisposable
+public class CommandQueue : IDisposable
 {
     /// <summary>The default upper bound on outstanding requests.</summary>
     public const int DefaultCapacity = 1024;
@@ -162,7 +162,7 @@ public sealed class CommandQueue : IDisposable
     /// <returns><c>true</c> if the request was enqueued; <c>false</c> if
     /// the queue refused (disconnected or disposed).</returns>
     /// <exception cref="ArgumentNullException">If <paramref name="request"/> is null.</exception>
-    public bool TryEnqueue(JsonRpcRequest request)
+    public virtual bool TryEnqueue(JsonRpcRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -237,6 +237,22 @@ public sealed class CommandQueue : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Standard <see cref="IDisposable"/> pattern. Subclasses may override
+    /// to add their own teardown.
+    /// </summary>
+    /// <param name="disposing">True when called from <see cref="Dispose()"/>.</param>
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!disposing)
+        {
+            return;
+        }
+
         lock (_stateLock)
         {
             if (_disposed)

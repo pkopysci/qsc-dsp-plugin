@@ -6,6 +6,7 @@ using gcu_common_utils.GenericEventArgs;
 using QscDspDevices.Plugin;
 using QscDspDevices.Plugin.Threading;
 using QscDspDevices.Protocol;
+using QscDspDevices.Protocol.JsonRpc;
 using QscDspDevices.Transport;
 
 namespace QscDspDevices.Connectivity;
@@ -44,6 +45,10 @@ public sealed class ConnectionManager : IDisposable
     private ConnectionState _state = ConnectionState.Disconnected;
     private CancellationTokenSource? _sessionCts;
     private Task? _sessionTask;
+    private CancellationTokenSource? _ioCts;
+    private Task? _sendLoopTask;
+    private QrcFramer? _framer;
+    private EventHandler<GenericSingleEventArgs<ReadOnlyMemory<byte>>>? _onRxBytes;
     private bool _userRequestedDisconnect;
     private bool _disposed;
 
@@ -218,6 +223,7 @@ public sealed class ConnectionManager : IDisposable
         }
 
         _sessionCts?.Dispose();
+        _ioCts?.Dispose();
         _disposed = true;
     }
 
@@ -333,6 +339,7 @@ public sealed class ConnectionManager : IDisposable
     {
         TransitionTo(ConnectionState.Connected, "transport reported Connected");
         _queue.StartAccepting();
+        StartIoLoops(cancellationToken);
 
         try
         {
@@ -346,6 +353,123 @@ public sealed class ConnectionManager : IDisposable
         {
             Log.Error(_deviceId, $"Post-connect action threw: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    private void StartIoLoops(CancellationToken sessionToken)
+    {
+        // Tear down any leftover I/O state from a prior session iteration
+        // BEFORE wiring fresh hooks. Belt-and-braces against a missed
+        // CleanupAfterDisconnect during a buggy reconnect.
+        StopIoLoops();
+
+        _framer = new QrcFramer();
+        _ioCts = CancellationTokenSource.CreateLinkedTokenSource(sessionToken);
+
+        // Receive path: every batch of bytes from the transport feeds the
+        // framer; complete frames go straight to the dispatcher. The
+        // event fires on whatever thread the transport's underlying
+        // socket reports — RawTcpTransport posts to the threadpool.
+        _onRxBytes = (_, args) =>
+        {
+            QrcFramer? framer = _framer;
+            if (framer is null)
+            {
+                return;
+            }
+
+            try
+            {
+                foreach (string frame in framer.Append(args.Arg.Span))
+                {
+                    _dispatcher.Dispatch(frame);
+                }
+            }
+            catch (FrameTooLargeException ex)
+            {
+                Log.Error(_deviceId, $"Inbound frame exceeded max size: {ex.Message}. Dropping connection.");
+                _transport.Disconnect();
+            }
+        };
+        _transport.RxReceived += _onRxBytes;
+
+        // Send path: a single task drains the queue and writes to the
+        // transport. Stays alive until the session-level cancellation
+        // token fires (Disconnect or session end).
+        CancellationToken ioToken = _ioCts.Token;
+        _sendLoopTask = Task.Run(() => RunSendLoopAsync(ioToken), ioToken);
+    }
+
+    private async Task RunSendLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                JsonRpcRequest request;
+                try
+                {
+                    request = await _queue.DequeueAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                string json = Newtonsoft.Json.JsonConvert.SerializeObject(request);
+                byte[] payload = QrcFramer.Encode(json);
+
+                try
+                {
+                    _transport.Send(payload);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    Log.Warn(_deviceId, $"Send refused: {ex.Message}. Dropping pending request id={request.Id}.");
+                    return;
+                }
+                catch (System.IO.IOException ex)
+                {
+                    Log.Warn(_deviceId, $"Send failed: {ex.Message}. Dropping pending request id={request.Id}.");
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Session shutting down; expected.
+        }
+    }
+
+    private void StopIoLoops()
+    {
+        if (_onRxBytes is not null)
+        {
+            _transport.RxReceived -= _onRxBytes;
+            _onRxBytes = null;
+        }
+
+        try
+        {
+            _ioCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already torn down.
+        }
+
+        try
+        {
+            _sendLoopTask?.Wait(TimeSpan.FromSeconds(2));
+        }
+        catch (AggregateException)
+        {
+            // Cancellation noise.
+        }
+
+        _sendLoopTask = null;
+        _ioCts?.Dispose();
+        _ioCts = null;
+        _framer = null;
     }
 
     private async Task WaitForFaultOrCancellationAsync(CancellationToken cancellationToken)
@@ -385,6 +509,7 @@ public sealed class ConnectionManager : IDisposable
         Justification = "Transport.Disconnect on the cleanup path can surface any IO error from the underlying socket; we are tearing down the session and the plugin must not crash the host (README §\"Exception Handling\"). Log Warn and continue.")]
     private void CleanupAfterDisconnect()
     {
+        StopIoLoops();
         _queue.Drain();
         _dispatcher.CancelAllPending("connection lost");
         try

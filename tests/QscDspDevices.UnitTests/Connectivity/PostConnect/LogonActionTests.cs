@@ -22,7 +22,7 @@ public sealed class LogonActionTests
     [Fact]
     public async Task Empty_credentials_skip_Logon_and_complete_with_true()
     {
-        using var queue = NewQueue();
+        using CommandQueue queue = NewQueue();
         var dispatcher = new JsonRpcDispatcher("dsp-1");
         var sut = new LogonAction("dsp-1", () => LogonCredentials.Empty, queue, dispatcher, new IdGenerator());
 
@@ -35,7 +35,7 @@ public sealed class LogonActionTests
     [Fact]
     public async Task Configured_credentials_enqueue_a_well_formed_Logon_request()
     {
-        using var queue = NewQueue();
+        using CommandQueue queue = NewQueue();
         var dispatcher = new JsonRpcDispatcher("dsp-1");
         var ids = new IdGenerator();
         var sut = new LogonAction("dsp-1", () => new LogonCredentials("alice", "p4ss"), queue, dispatcher, ids);
@@ -45,7 +45,7 @@ public sealed class LogonActionTests
         // We expect the Logon request to be enqueued before the action returns
         // (it then waits on the response). Drain to assert the wire shape.
         await Task.Delay(50);
-        var sent = queue.SnapshotPending();
+        IReadOnlyList<JsonRpcRequest> sent = queue.SnapshotPending();
         sent.Should().HaveCount(1);
         sent[0].Method.Should().Be("Logon");
         var p = JObject.FromObject(sent[0].Params!);
@@ -63,7 +63,7 @@ public sealed class LogonActionTests
     [Fact]
     public async Task Error_response_marks_completion_false_but_returns_normally()
     {
-        using var queue = NewQueue();
+        using CommandQueue queue = NewQueue();
         var dispatcher = new JsonRpcDispatcher("dsp-1");
         var sut = new LogonAction("dsp-1", () => new LogonCredentials("u", "p"), queue, dispatcher, new IdGenerator());
 
@@ -79,7 +79,7 @@ public sealed class LogonActionTests
     [Fact]
     public async Task Cancellation_propagates()
     {
-        using var queue = NewQueue();
+        using CommandQueue queue = NewQueue();
         var dispatcher = new JsonRpcDispatcher("dsp-1");
         var sut = new LogonAction("dsp-1", () => new LogonCredentials("u", "p"), queue, dispatcher, new IdGenerator());
 
@@ -95,7 +95,7 @@ public sealed class LogonActionTests
     [Fact]
     public async Task WaitForCompletionAsync_before_first_run_returns_true()
     {
-        using var queue = NewQueue();
+        using CommandQueue queue = NewQueue();
         var dispatcher = new JsonRpcDispatcher("dsp-1");
         var sut = new LogonAction("dsp-1", () => LogonCredentials.Empty, queue, dispatcher, new IdGenerator());
 
@@ -105,7 +105,7 @@ public sealed class LogonActionTests
     [Fact]
     public void Constructor_with_null_args_throws()
     {
-        using var queue = NewQueue();
+        using CommandQueue queue = NewQueue();
         var dispatcher = new JsonRpcDispatcher("dsp-1");
         var ids = new IdGenerator();
         Func<LogonCredentials> source = () => LogonCredentials.Empty;

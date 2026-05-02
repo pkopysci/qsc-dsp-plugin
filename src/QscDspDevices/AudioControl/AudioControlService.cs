@@ -93,16 +93,18 @@ public sealed class AudioControlService
             Params = new { Name = channel.LevelTag, Value = deviceValue },
         };
 
-        if (!_queue.TryEnqueue(request))
-        {
-            // CommandQueue.TryEnqueue logs on its own when refusing.
-            return;
-        }
-
         // Optimistic-update: record the framework-side level so a subsequent
         // Get* returns it without waiting on the AutoPoll round-trip. The
-        // first AutoPoll after this write reconciles cache with reality.
+        // cache update runs regardless of whether the queue accepted the
+        // request (it refuses while disconnected per M2 design); the Set
+        // surface is the framework's authoritative intent and Get* must
+        // reflect it. The next AutoPoll after reconnect reconciles cache
+        // with the Core's actual state.
         UpdateLevelCacheAndRaise(channel, Math.Clamp(level, LevelScaler.FrameworkMin, LevelScaler.FrameworkMax));
+
+        // CommandQueue.TryEnqueue logs on its own when refusing; we do not
+        // re-log here.
+        _queue.TryEnqueue(request);
     }
 
     /// <summary>
@@ -126,12 +128,10 @@ public sealed class AudioControlService
             Params = new { Name = channel!.MuteTag, Value = mute },
         };
 
-        if (!_queue.TryEnqueue(request))
-        {
-            return;
-        }
-
+        // See SetLevel — cache update is unconditional on Set; queue-accept
+        // is best-effort.
         UpdateMuteCacheAndRaise(channel, mute);
+        _queue.TryEnqueue(request);
     }
 
     /// <summary>

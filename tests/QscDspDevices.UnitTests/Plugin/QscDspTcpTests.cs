@@ -163,13 +163,12 @@ public sealed class QscDspTcpTests
     }
 
     [Fact]
-    public void M3_audio_control_methods_log_Notice_and_return_documented_fallback_without_throwing()
+    public void M3_audio_control_methods_with_unknown_ids_return_documented_fallback_without_throwing()
     {
-        using var sink = new TestLoggerSink();
         using var sut = new TestableQscDspTcp(new DeterministicClock());
         sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
 
-        // Mutators: log Notice and don't throw.
+        // Mutators: log Logger.Error for unknown ids; don't throw.
         Action setLevel = () => sut.SetAudioOutputLevel("out-1", 50);
         Action setMute = () => sut.SetAudioOutputMute("out-1", true);
         Action recallPreset = () => sut.RecallAudioPreset("preset-1");
@@ -177,7 +176,7 @@ public sealed class QscDspTcpTests
         setMute.Should().NotThrow();
         recallPreset.Should().NotThrow();
 
-        // Queries: return documented fallback without throwing.
+        // Queries: return documented fallback (0/false/empty) for unknown ids.
         sut.GetAudioOutputLevel("out-1").Should().Be(0);
         sut.GetAudioOutputMute("out-1").Should().BeFalse();
         sut.GetAudioInputLevel("in-1").Should().Be(0);
@@ -185,10 +184,6 @@ public sealed class QscDspTcpTests
         sut.GetAudioInputIds().Should().BeEmpty();
         sut.GetAudioOutputIds().Should().BeEmpty();
         sut.GetAudioPresetIds().Should().BeEmpty();
-
-        sink.Captures.Should().Contain(
-            c => c.Severity == gcu_common_utils.Logging.LogSeverity.Notice
-              && c.Message.Contains("not implemented in M2", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -363,6 +358,63 @@ public sealed class QscDspTcpTests
         sut.BackupDeviceActive.Should().BeFalse();
         sut.BackupDeviceOnline.Should().BeFalse();
         sut.BackupDeviceExists.Should().BeFalse();
+    }
+
+    [Fact]
+    public void AddInputChannel_then_GetAudioInputIds_returns_the_id()
+    {
+        using var sut = new TestableQscDspTcp(new DeterministicClock());
+        sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
+
+        sut.AddInputChannel("mic1", "mic1.gain", "mic1.mute", 0, 0, -80, 0, new List<string>());
+
+        sut.GetAudioInputIds().Should().Contain("mic1");
+    }
+
+    [Fact]
+    public void AddOutputChannel_then_GetAudioOutputIds_returns_the_id()
+    {
+        using var sut = new TestableQscDspTcp(new DeterministicClock());
+        sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
+
+        sut.AddOutputChannel("out1", "out1.gain", "out1.mute", "router", 0, 0, 0, -100, new List<string>());
+
+        sut.GetAudioOutputIds().Should().Contain("out1");
+    }
+
+    [Fact]
+    public void AddPreset_then_GetAudioPresetIds_returns_the_id()
+    {
+        using var sut = new TestableQscDspTcp(new DeterministicClock());
+        sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
+
+        sut.AddPreset("dinner", "MainBank", 3);
+
+        sut.GetAudioPresetIds().Should().Contain("dinner");
+    }
+
+    [Fact]
+    public void SetAudioInputLevel_then_GetAudioInputLevel_returns_the_optimistic_value()
+    {
+        using var sut = new TestableQscDspTcp(new DeterministicClock());
+        sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
+        sut.AddInputChannel("mic1", "mic1.gain", "mic1.mute", 0, 0, -80, 0, new List<string>());
+
+        sut.SetAudioInputLevel("mic1", 75);
+
+        sut.GetAudioInputLevel("mic1").Should().Be(75);
+    }
+
+    [Fact]
+    public void SetAudioOutputMute_then_GetAudioOutputMute_returns_the_optimistic_value()
+    {
+        using var sut = new TestableQscDspTcp(new DeterministicClock());
+        sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
+        sut.AddOutputChannel("o1", "o1.lvl", "o1.mute", "router", 0, 0, 100, 0, new List<string>());
+
+        sut.SetAudioOutputMute("o1", true);
+
+        sut.GetAudioOutputMute("o1").Should().BeTrue();
     }
 
     private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)

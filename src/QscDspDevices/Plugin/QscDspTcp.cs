@@ -7,9 +7,12 @@ using gcu_hardware_service.AudioDevices;
 using gcu_hardware_service.BaseDevice;
 using gcu_hardware_service.Redundancy;
 using gcu_hardware_service.Routable;
+using QscDspDevices.AudioControl;
 using QscDspDevices.Connectivity;
+using QscDspDevices.Connectivity.PostConnect;
 using QscDspDevices.Plugin.Threading;
 using QscDspDevices.Protocol;
+using QscDspDevices.Protocol.ChangeGroup;
 using QscDspDevices.Transport;
 
 namespace QscDspDevices.Plugin;
@@ -53,11 +56,16 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
 {
     private readonly IQrcClock _clock;
     private readonly ThreadCensus _threadCensus;
+    private readonly AudioChannelRegistry _registry;
+    private readonly object _credentialsLock = new();
 
+    private LogonCredentials _credentials = LogonCredentials.Empty;
     private CommandQueue? _queue;
     private JsonRpcDispatcher? _dispatcher;
     private IConnectionTransport? _transport;
     private ConnectionManager? _connectionManager;
+    private AudioControlService? _audioService;
+    private PresetService? _presetService;
     private bool _disposed;
 
     /// <summary>
@@ -86,17 +94,21 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         // attribute breaches to the right device.
         _threadCensus = new ThreadCensus("QscDspTcp");
 
+        // The channel registry is also constructed eagerly because
+        // Crestron framework hosts may invoke AddInputChannel /
+        // AddOutputChannel / AddPreset BEFORE Initialize() runs (the
+        // composition order is config-driven, not framework-mandated).
+        _registry = new AudioChannelRegistry("QscDspTcp");
+
         Manufacturer = "QSC";
         Model = "Q-SYS Core";
     }
 
-    // M2 declares every event the framework interfaces require but does
-    // not raise them — the producers (audio control, routing, presets,
-    // logic, redundancy) land in M3-M6. CS0067 fires for events that are
-    // declared and never invoked; we suppress narrowly here with the
-    // intent documented inline. Each subsequent milestone invokes the
-    // events it owns and the suppression naturally becomes unnecessary.
-#pragma warning disable CS0067 // Event raised in a later milestone — see the M2 design.md.
+    // M3 raises the four IAudioControl events via AudioControlService;
+    // the M4-M6 events (route, zone, logic, redundancy) are still
+    // declared but unraised, so the CS0067 pragma is narrowed to that
+    // group. Each subsequent milestone invokes the events it owns and
+    // the suppression naturally shrinks until M7 retires it.
 
     /// <inheritdoc />
     public event EventHandler<GenericDualEventArgs<string, string>>? AudioInputLevelChanged;
@@ -109,6 +121,8 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
 
     /// <inheritdoc />
     public event EventHandler<GenericDualEventArgs<string, string>>? AudioOutputMuteChanged;
+
+#pragma warning disable CS0067 // Event raised in a later milestone — see the M3 design.md.
 
     /// <inheritdoc />
     public event EventHandler<GenericDualEventArgs<string, string>>? AudioRouteChanged;
@@ -155,22 +169,60 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         Id = hostId;
         Label = hostId;
 
-        // M2 captures these for logging only; M3 wires Logon (username/password)
-        // and uses coreId for QSC component-control fan-out.
+        // coreId is currently unused (QRC operates on a single Core per
+        // connection); it lands when M6 introduces redundancy fan-out.
         _ = coreId;
-        _ = username;
-        _ = password;
+
+        // Stash credentials behind a lock so the LogonAction's callback
+        // sees fresh values across reconnects without racing a concurrent
+        // Initialize.
+        lock (_credentialsLock)
+        {
+            _credentials = new LogonCredentials(username, password);
+        }
 
         IConnectionTransport transport = BuildTransport(hostname, port);
         var queue = new CommandQueue(hostId);
         var dispatcher = new JsonRpcDispatcher(hostId);
+        var ids = new IdGenerator();
+        var scaler = new LevelScaler(hostId);
+        var groupManager = new ChangeGroupManager(hostId, ids);
+        var audioService = new AudioControlService(hostId, _registry, scaler, queue, ids);
+        var presetService = new PresetService(hostId, _registry, queue, ids);
+
+        groupManager.SetDeltaCallback(audioService.OnDeviceUpdate);
+
+        // Forward the AudioControlService events to QscDspTcp's own
+        // surface — the framework calls IAudioControl.* events on the
+        // public class, not the inner service.
+        audioService.AudioInputLevelChanged += (_, args) => AudioInputLevelChanged?.Invoke(this, args);
+        audioService.AudioInputMuteChanged += (_, args) => AudioInputMuteChanged?.Invoke(this, args);
+        audioService.AudioOutputLevelChanged += (_, args) => AudioOutputLevelChanged?.Invoke(this, args);
+        audioService.AudioOutputMuteChanged += (_, args) => AudioOutputMuteChanged?.Invoke(this, args);
+
+        var logon = new LogonAction(
+            hostId,
+            () =>
+            {
+                lock (_credentialsLock)
+                {
+                    return _credentials;
+                }
+            },
+            queue,
+            dispatcher,
+            ids);
+
+        var hydrate = new HydrateChangeGroupAction(hostId, _registry, groupManager, queue, dispatcher, logon);
+        var postConnect = new CompositePostConnectAction(new IPostConnectAction[] { logon, hydrate });
+
         var manager = new ConnectionManager(
             hostId,
             transport,
             new ReconnectStrategy(_clock),
             queue,
             dispatcher,
-            postConnect: null,
+            postConnect: postConnect,
             threadCensus: _threadCensus);
 
         manager.StateChanged += OnStateChanged;
@@ -179,6 +231,8 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         _queue = queue;
         _dispatcher = dispatcher;
         _connectionManager = manager;
+        _audioService = audioService;
+        _presetService = presetService;
         IsInitialized = true;
 
         Log.Notice(Id, $"Initialized for {hostname}:{port} (coreId={coreId}).");
@@ -210,96 +264,119 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     }
 
     /// <inheritdoc />
-    public IEnumerable<string> GetAudioPresetIds() => Array.Empty<string>();
+    public IEnumerable<string> GetAudioPresetIds() => _registry.GetPresetIds();
 
     /// <inheritdoc />
-    public IEnumerable<string> GetAudioInputIds() => Array.Empty<string>();
+    public IEnumerable<string> GetAudioInputIds() => _registry.GetInputIds();
 
     /// <inheritdoc />
-    public IEnumerable<string> GetAudioOutputIds() => Array.Empty<string>();
+    public IEnumerable<string> GetAudioOutputIds() => _registry.GetOutputIds();
 
     /// <inheritdoc />
     public void SetAudioInputLevel(string id, int level)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(SetAudioInputLevel), nameof(id));
-        Log.Notice(Id, $"SetAudioInputLevel('{id}', {level}) — not implemented in M2 (lands in M3).");
+        _audioService?.SetLevel(id, level);
     }
 
     /// <inheritdoc />
     public int GetAudioInputLevel(string id)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(GetAudioInputLevel), nameof(id));
-        return 0;
+        return _audioService?.GetLevel(id) ?? 0;
     }
 
     /// <inheritdoc />
     public void SetAudioInputMute(string id, bool mute)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(SetAudioInputMute), nameof(id));
-        Log.Notice(Id, $"SetAudioInputMute('{id}', {mute}) — not implemented in M2 (lands in M3).");
+        _audioService?.SetMute(id, mute);
     }
 
     /// <inheritdoc />
     public bool GetAudioInputMute(string id)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(GetAudioInputMute), nameof(id));
-        return false;
+        return _audioService?.GetMute(id) ?? false;
     }
 
     /// <inheritdoc />
     public void SetAudioOutputLevel(string id, int level)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(SetAudioOutputLevel), nameof(id));
-        Log.Notice(Id, $"SetAudioOutputLevel('{id}', {level}) — not implemented in M2 (lands in M3).");
+        _audioService?.SetLevel(id, level);
     }
 
     /// <inheritdoc />
     public int GetAudioOutputLevel(string id)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(GetAudioOutputLevel), nameof(id));
-        return 0;
+        return _audioService?.GetLevel(id) ?? 0;
     }
 
     /// <inheritdoc />
     public void SetAudioOutputMute(string id, bool mute)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(SetAudioOutputMute), nameof(id));
-        Log.Notice(Id, $"SetAudioOutputMute('{id}', {mute}) — not implemented in M2 (lands in M3).");
+        _audioService?.SetMute(id, mute);
     }
 
     /// <inheritdoc />
     public bool GetAudioOutputMute(string id)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(GetAudioOutputMute), nameof(id));
-        return false;
+        return _audioService?.GetMute(id) ?? false;
     }
 
     /// <inheritdoc />
     public void RecallAudioPreset(string id)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(RecallAudioPreset), nameof(id));
-        Log.Notice(Id, $"RecallAudioPreset('{id}') — not implemented in M2 (lands in M3).");
+        if (_presetService is null)
+        {
+            string deviceId = string.IsNullOrEmpty(Id) ? "QscDspTcp" : Id;
+            Log.Error(deviceId, $"RecallAudioPreset('{id}') called before Initialize().");
+            return;
+        }
+
+        _presetService.Recall(id);
     }
 
     /// <inheritdoc />
     public void AddInputChannel(string id, string levelTag, string muteTag, int bankIndex, int levelMax, int levelMin, int routerIndex, List<string> tags)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(AddInputChannel), nameof(id));
-        Log.Notice(Id, $"AddInputChannel('{id}') — not implemented in M2 (lands in M3).");
+        ParameterValidator.ThrowIfNullOrEmpty(levelTag, nameof(AddInputChannel), nameof(levelTag));
+        ParameterValidator.ThrowIfNullOrEmpty(muteTag, nameof(AddInputChannel), nameof(muteTag));
+
+        IReadOnlyList<string> tagList = tags?.ToArray() ?? (IReadOnlyList<string>)Array.Empty<string>();
+        _registry.RegisterInput(new AudioChannel(
+            id, levelTag, muteTag, levelMin, levelMax, true, routerIndex, bankIndex, tagList));
     }
 
     /// <inheritdoc />
     public void AddOutputChannel(string id, string levelTag, string muteTag, string routerTag, int routerIndex, int bankIndex, int levelMax, int levelMin, List<string> tags)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(AddOutputChannel), nameof(id));
-        Log.Notice(Id, $"AddOutputChannel('{id}') — not implemented in M2 (lands in M3).");
+        ParameterValidator.ThrowIfNullOrEmpty(levelTag, nameof(AddOutputChannel), nameof(levelTag));
+        ParameterValidator.ThrowIfNullOrEmpty(muteTag, nameof(AddOutputChannel), nameof(muteTag));
+
+        // routerTag is captured for M4 — used by the matrix routing
+        // implementation when it lands. For M3 we register the channel
+        // and ignore the tag.
+        _ = routerTag;
+
+        IReadOnlyList<string> tagList = tags?.ToArray() ?? (IReadOnlyList<string>)Array.Empty<string>();
+        _registry.RegisterOutput(new AudioChannel(
+            id, levelTag, muteTag, levelMin, levelMax, false, routerIndex, bankIndex, tagList));
     }
 
     /// <inheritdoc />
     public void AddPreset(string id, string bank, int index)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(AddPreset), nameof(id));
-        Log.Notice(Id, $"AddPreset('{id}') — not implemented in M2 (lands in M3).");
+        ParameterValidator.ThrowIfNullOrEmpty(bank, nameof(AddPreset), nameof(bank));
+        _registry.RegisterPreset(new AudioPreset(id, bank, index));
     }
 
     /// <inheritdoc />

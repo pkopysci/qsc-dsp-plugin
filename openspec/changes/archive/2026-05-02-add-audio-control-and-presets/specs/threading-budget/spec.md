@@ -2,7 +2,7 @@
 
 ## MODIFIED Requirements
 
-### Requirement: Plugin owns at most three live threads
+### Requirement: At most three plugin-owned threads alive simultaneously
 
 The plugin SHALL never have more than three OS-level threads of its own alive simultaneously. M2 satisfied this trivially with a single threadpool task; M3 lays down the actual three-thread layout that every higher-milestone feature is built on: `qsc-send` (drains `CommandQueue` and writes to the transport), `qsc-recv` (owns the `_transport.RxBytesReceived` callback and drives `QrcFramer` plus `JsonRpcDispatcher`), and `qsc-timer` (runs the keepalive cadence — `NoOp` every 30 s of outbound silence — and the 15 s reconnect interval). Each thread MUST register with `ThreadCensus` on entry and dispose the registration on exit. The threads SHALL be created at `Connect()` time and joined at `Disconnect()` time. The M2 `RunSessionAsync` method MUST be removed.
 

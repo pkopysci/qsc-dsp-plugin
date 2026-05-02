@@ -53,9 +53,9 @@
 
 | # | Requirement | Implementation | Test | Status |
 |---|-------------|----------------|------|--------|
-| 5.1 | Zero–many audio presets | `Domain/PresetRegistry.cs` | _planned M3_ | ⏳ M3 |
-| 5.2 | Zero–many audio input channels | `Domain/InputChannelRegistry.cs` | _planned M3_ | ⏳ M3 |
-| 5.3 | Zero–many audio output channels | `Domain/OutputChannelRegistry.cs` | _planned M3_ | ⏳ M3 |
+| 5.1 | Zero–many audio presets | `src/QscDspDevices/AudioControl/AudioChannelRegistry.cs` (`RegisterPreset` / `GetPresetIds`); `AudioControl/PresetService.cs` issues `Snapshot.Load`. | `AudioChannelRegistryTests.RegisterPreset_then_GetPresetIds_includes_it`, `PresetServiceTests.Recall_known_preset_enqueues_Snapshot_Load`, `AudioControlEndToEndTests.RecallAudioPreset_sends_Snapshot_Load_with_correct_bank_and_index` | ✅ |
+| 5.2 | Zero–many audio input channels | `src/QscDspDevices/AudioControl/AudioChannelRegistry.cs:RegisterInput`; `QscDspTcp.AddInputChannel` is the framework entry point. | `AudioChannelRegistryTests.Register_input_then_GetInputIds_returns_it`, `QscDspTcpTests.AddInputChannel_then_GetAudioInputIds_returns_the_id` | ✅ |
+| 5.3 | Zero–many audio output channels | `src/QscDspDevices/AudioControl/AudioChannelRegistry.cs:RegisterOutput`; `QscDspTcp.AddOutputChannel` is the framework entry point. | `AudioChannelRegistryTests.Register_output_then_GetOutputIds_returns_it`, `QscDspTcpTests.AddOutputChannel_then_GetAudioOutputIds_returns_the_id` | ✅ |
 | 5.4 | Matrix routing for all output channels | `Domain/MatrixRouter.cs` | _planned M4_ | ⏳ M4 |
 | 5.5 | Zero–one redundant Q-SYS Core, fail-over and switch-back | `Connectivity/RedundantCorePair.cs` | _planned M6_ | ⏳ M6 |
 
@@ -63,12 +63,12 @@
 
 | # | Requirement | Implementation | Test | Status |
 |---|-------------|----------------|------|--------|
-| 6.1 | Named Controls for routing/gain/mute/triggers | `Backends/QrcBackend.cs` (`Control.Get` / `Control.Set`) | _planned M2/M3_ | ⏳ M2/M3 |
-| 6.2 | Numeric channel/mixer gain | `Domain/GainScaler.cs` (0–100 ↔ native) | property tests | ⏳ M3 |
-| 6.3 | Boolean channel/mixer mute | `Backends/QrcBackend.cs` | unit tests | ⏳ M3 |
+| 6.1 | Named Controls for routing/gain/mute/triggers | `src/QscDspDevices/AudioControl/AudioControlService.cs` enqueues `Control.Set`; AutoPoll deltas drive cache via `Protocol/ChangeGroup/ChangeGroupManager.cs`. | `AudioControlServiceTests` (set→Control.Set wire shape, AutoPoll cache update); `AudioControlEndToEndTests.SetAudioInputLevel_round_trips_via_Control_Set_on_the_wire` | ✅ (gain/mute in M3; routing in M4, triggers in M5) |
+| 6.2 | Numeric channel/mixer gain | `src/QscDspDevices/AudioControl/LevelScaler.cs` (0–100 ↔ native, half-up rounding, one-shot warn on out-of-range) | `LevelScalerTests` (11 cases) + `LevelScalerProperties` (FsCheck round-trip ±1 across full range) | ✅ |
+| 6.3 | Boolean channel/mixer mute | `src/QscDspDevices/AudioControl/AudioControlService.cs:SetMute/GetMute`; AutoPoll delta extraction tolerates bool/int/float. | `AudioControlServiceTests.SetMute_for_known_output_enqueues_Control_Set_with_boolean_Value`, `OnDeviceUpdate_treats_integer_value_as_boolean_for_mute` | ✅ |
 | 6.4 | Numeric matrix-router controls | `Domain/MatrixRouter.cs` | _planned M4_ | ⏳ M4 |
 | 6.5 | Numeric/bool/string named controls associated with gain/mute/router | `Backends/QrcBackend.cs` | unit tests | ⏳ M3/M4 |
-| 6.6 | Snapshots for `IAudioControl.RecallAudioPreset()` and `AddAudioPreset()` | `Backends/QrcBackend.cs` (`Snapshot.Load`) | _planned M3_ | ⏳ M3 |
+| 6.6 | Snapshots for `IAudioControl.RecallAudioPreset()` and `AddAudioPreset()` | `src/QscDspDevices/AudioControl/PresetService.cs` issues `Snapshot.Load { Name=bank, Bank=index }` (no `Ramp` field, Core defaults to 0). | `PresetServiceTests`, `AudioControlEndToEndTests.RecallAudioPreset_sends_Snapshot_Load_with_correct_bank_and_index` | ✅ |
 
 ## 7. Device connection (README §"Device Connection")
 
@@ -78,7 +78,7 @@
 | 7.2 | Lost connection → reconnect immediately if no backup, else switch to backup | `Connectivity/ConnectionManager.cs` covers no-backup retry; backup path planned in M6 | `ConnectionManagerTests.Mid_flight_drop_triggers_reconnect_loop` (no-backup path) | ⚠ no-backup path complete; backup-failover in M6 |
 | 7.3 | On failed connection: log error, wait 15s, retry until external Disconnect() | `src/QscDspDevices/Connectivity/ReconnectStrategy.cs` (constant 15s, deterministic-clock-tested) | `ReconnectStrategyTests.Interval_is_exactly_fifteen_seconds`, `ConnectionManagerTests.Failed_first_attempt_triggers_reconnect_after_exactly_fifteen_seconds` | ✅ |
 | 7.4 | On any disconnect: update `IsOnline`, then call `NotifyOnlineStatus()` | `src/QscDspDevices/Plugin/QscDspTcp.cs:OnStateChanged`; manager fault-path transitions to Disconnected immediately (NOT 15s later) per integration test discovery | `QscDspTcpTests.Disconnect_drives_IsOnline_false_then_NotifyOnlineStatus` (asserts ordering by reading IsOnline INSIDE the handler) | ✅ |
-| 7.5 | On successful connection: hydrate state of channels/routing/logic/snapshots | `src/QscDspDevices/Connectivity/IPostConnectAction.cs` (hook, default `NoopPostConnectAction`); concrete hydration lands in M3 | `ConnectionManagerTests` exercise the hook path; behavioural tests in M3 | ⏳ M3 (hook + default no-op shipped in M2) |
+| 7.5 | On successful connection: hydrate state of channels/routing/logic/snapshots | M3: `Connectivity/PostConnect/CompositePostConnectAction.cs` runs `LogonAction` (when creds configured) then `HydrateChangeGroupAction`. The hydrate action subscribes every level/mute tag from `AudioChannelRegistry` into the `qsc-plugin-state` change group at 250 ms AutoPoll. Routing/logic hydration extends the same chain in M4/M5. | `LogonActionTests`, `HydrateChangeGroupActionTests`, `CompositePostConnectActionTests`, `AudioControlEndToEndTests.Connect_with_credentials_sends_Logon_then_subscribes` | ✅ (gain/mute/snapshots in M3; routing/logic in M4/M5) |
 
 ## 8. Sending/receiving (README §"Sending/Receiving")
 
@@ -89,8 +89,8 @@
 | 8.3 | FIFO order | `src/QscDspDevices/Protocol/CommandQueue.cs` (`Channel.CreateBounded<T>` + single-reader) | `CommandQueueProperties.Sequential_FIFO_preserves_id_order` (FsCheck, random N up to 1024) | ✅ |
 | 8.4 | Refuse send/queue while disconnected; log error | `src/QscDspDevices/Protocol/CommandQueue.cs:TryEnqueue` (state-locked check, logs Error, returns false) | `CommandQueueTests.TryEnqueue_when_not_accepting_returns_false_and_logs_error` (with TestLoggerSink assertion); `FakeServerEndToEndTests.Refusing_send_while_disconnected_logs_an_error` | ✅ |
 | 8.5 | Clear queue on any disconnect | `src/QscDspDevices/Protocol/CommandQueue.cs:Drain` (called by `ConnectionManager.CleanupAfterDisconnect`); logs Notice with discard count | `CommandQueueTests.Drain_discards_pending_entries`, `ConnectionManagerTests.Disconnect_drains_queue_and_reaches_Disconnected` | ✅ |
-| 8.6 | Maintain up-to-date control state via polling/subscriptions | `src/QscDspDevices/Protocol/JsonRpcDispatcher.cs:IAutoPollSubscription` (registration surface); concrete subscribers land in M3 | `JsonRpcDispatcherTests.AutoPoll_push_routes_to_subscription_not_to_pending_request` | ⚠ Surface complete in M2; consumer in M3 |
-| 8.7 | On state update: update internal state THEN notify subscribers | `src/QscDspDevices/Plugin/QscDspTcp.cs:OnStateChanged` enforces this for IsOnline; channel/preset/router state updates land in M3+ | `QscDspTcpTests.Connect_drives_IsOnline_true_then_NotifyOnlineStatus` (asserts state-before-notify by reading IsOnline INSIDE the handler) | ⚠ IsOnline pattern shipped in M2; channel-state pattern in M3 |
+| 8.6 | Maintain up-to-date control state via polling/subscriptions | `src/QscDspDevices/Protocol/ChangeGroup/ChangeGroupManager.cs` owns the single `qsc-plugin-state` AutoPoll group at 250 ms; AutoPoll responses parse into `ChangeGroupDelta` and route to `AudioControlService.OnDeviceUpdate`, which updates the cache and raises `IAudioControl` events. | `ChangeGroupManagerTests`, `AudioControlServiceTests.OnDeviceUpdate_*`, `AudioControlEndToEndTests.Server_pushed_AutoPoll_delta_fires_AudioInputMuteChanged` | ✅ |
+| 8.7 | On state update: update internal state THEN notify subscribers | M3: `AudioControlService.UpdateLevelCacheAndRaise` / `UpdateMuteCacheAndRaise` write the cache before invoking the matching `IAudioControl` event; the IsOnline pattern in `QscDspTcp.OnStateChanged` is unchanged from M2. | `AudioControlServiceTests.OnDeviceUpdate_with_input_mute_delta_fires_AudioInputMuteChanged` (handler reads cache and sees the new value); `QscDspTcpTests.Connect_drives_IsOnline_true_then_NotifyOnlineStatus` | ✅ |
 
 ## 9. Exception handling (README §"Exception Handling")
 

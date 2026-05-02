@@ -90,18 +90,52 @@ guard logs `Logger.Error` "thread budget breached" and (in DEBUG only)
 calls `Environment.FailFast` if a 4th thread registers while three are
 alive.
 
-### M3 (planned)
+### M3 (shipped)
 
-M3 introduces dedicated **send / receive / timer** threads matching the
-canonical layout below, alongside the active change-group subscriptions
-that drive the steady-state work pattern. The M3 design.md will document
-the migration; the `ThreadCensus` instance survives as-is.
+M3 lit up the steady-state work pattern (active change-group AutoPoll,
+audio control, snapshot recall, Logon) and the I/O loops the queue and
+dispatcher feed into. The threading shape is a more pragmatic variant
+of the originally-planned canonical layout below: instead of three
+dedicated `Thread` instances, the manager spawns two threadpool
+`Task`s — a send loop and a keepalive ticker — alongside an
+event-driven receive path on the transport's `RxReceived` event. The
+overall budget is still ≤ 3 plugin-owned units of work, all registered
+with `ThreadCensus`.
 
-| Thread | Purpose | Lifetime | Owner (M3+) |
+| Unit of work | Purpose | Lifetime | Owner |
 |--------|---------|----------|-------|
-| `T1: send`    | Drains the FIFO `CommandQueue`, writes frames to the active transport | per session | `Protocol/SendLoop.cs` |
-| `T2: receive` | Reads frames from the transport, dispatches by JSON-RPC id or method, fires domain events | per session | `Protocol/ReceiveLoop.cs` |
-| `T3: timer`   | NoOp keepalive (every 30 s), reconnect backoff (15 s), AutoPoll sanity, redundant-core liveness | per session | `Connectivity/PluginTimer.cs` |
+| Send task | `Task.Run` draining `CommandQueue.DequeueAsync`, JSON-serializes + frame-encodes, writes to `IConnectionTransport.Send`. Notifies keepalive on every successful write. | per session | `ConnectionManager.RunSendLoopAsync` |
+| Receive event handler | `transport.RxReceived` → `QrcFramer.Append` (carries split-frame state across reads) → `JsonRpcDispatcher.Dispatch`. Runs on whatever threadpool worker the transport raises the event on. | per session | `ConnectionManager.StartIoLoops` (anonymous handler) |
+| Keepalive task | `Task.Run` ticking `KeepaliveTimer.TickAsync` once per second; the timer itself only emits a `NoOp` after 30 s of outbound silence. | per session | `ConnectionManager.RunKeepaliveLoopAsync` |
+
+The dedicated `Thread` instances called out in the original M3 plan
+were dropped in favour of `Task`-based equivalents because (a) the
+README's budget rule constrains *count*, not *type*, of plugin-owned
+work, (b) `Task.Run` fits the rest of the codebase (M2 session
+loop, `KeepaliveTimer.TickAsync`) without inventing a new lifecycle
+manager, and (c) `ThreadCensus`'s token-based registration gives
+us the budget guarantee regardless of underlying thread reuse.
+
+If a future milestone (M5/M6) finds it actually needs OS-thread
+pinning — for hard-realtime keepalive on a busy threadpool, say — the
+`PluginThreads.cs` shim can be reintroduced without changing the
+public contract of `ConnectionManager`.
+
+## Post-connect hydration sequence — M3 (shipped)
+
+Each (re)connect runs a `CompositePostConnectAction` of two steps:
+
+1. **`LogonAction`** — issues `Logon { User, Password }` if either
+   credential is non-empty; awaits the response with a 5 s timeout.
+   Empty creds skip; error response logs warn + continues.
+2. **`HydrateChangeGroupAction`** — awaits Logon completion (when
+   present), then for every channel registered via
+   `AudioChannelRegistry`, enqueues `ChangeGroup.AddControl` for the
+   level-tag and the mute-tag, registers the AutoPoll id with the
+   dispatcher, and enqueues `ChangeGroup.AutoPoll` at 250 ms.
+
+The Core's AutoPoll responses then drive `AudioControlService` cache
+updates and the `IAudioControl` event surface.
 
 ## Key state machines
 

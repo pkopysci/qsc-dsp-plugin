@@ -43,3 +43,41 @@
 - AutoPoll → cache → event invariant under heavy concurrent producer load (only single-threaded delta dispatch tested).
 - 15 s reconnect cadence under a routing-mid-flight disconnect (no integration test for Route → disconnect → reconnect → rehydrate).
 - Whether the redacting log formatter scrubs zone controlTags that might embed credentials (none of the M4 surfaces accept passwords; tag names are echoed verbatim in `Re-registering` notices).
+
+## Pass 2
+
+**Verdict: ✅ ship-ready**
+**Date:** 2026-05-02 UTC
+**Build:** Release `-warnaserror` 0/0 — clean
+**Tests:** 299/299 across 3 stress runs (278 unit + 11 integration + 10 property); zero flake
+**Coverage (QscDspDevices.dll, aggregated 3x Cobertura):** line 92.2% / branch 81.1% / method 95.8% — above 90% gate
+**Format:** `dotnet format --verify-no-changes` clean
+**Release DLL:** 96,768 bytes / 500 KB budget — 19% used (within drift)
+
+### Concerns from Pass 1 — verified resolved
+
+- **C1 — `Clear` empty→empty no-op.** `AudioRoutingService.UpdateCacheAndRaise:227-230` skips raise when `!hadPrior && newSourceId is empty`. Wire-level `Control.Set Value=0` still enqueues at `:160-161` (cache update precedes enqueue, then enqueue fires unconditionally). Pinned by `Clear_on_a_never_routed_output_does_not_fire_RouteChanged` which asserts `fired=false`, `GetCurrentSource=""`, AND `SnapshotPending().HaveCount(1)`. Resolved.
+
+- **C2 — `Route` rejects `BankIndex < 1`.** `AudioRoutingService:112-118` guards before `UpdateCacheAndRaise` and `TryEnqueue`, so a rejected source mutates neither cache nor wire. Both `Route_rejects_a_source_with_invalid_bank_index_zero` and `_negative_bank_index` assert `SnapshotPending().BeEmpty()` and (for zero) `GetCurrentSource=""`. Resolved.
+
+- **C3 — Intent-semantics XML doc.** `AudioRoutingService:19-38` and `AudioZoneEnableService:20-29` carry symmetric `<remarks>` describing cache-before-enqueue, the disconnected-window divergence, and AutoPoll reconciliation on reconnect. Wording is consistent with M3's `AudioControlService`. Resolved.
+
+- **C4 — Tag-collision Warn.** `AudioChannelRegistry.WarnIfTagCollides:279-294` correctly compares `existingOwner != newOwnerId` so same-channel re-registration (where the prior tag entries are removed at `:235-256` before re-insertion) does NOT spuriously warn — verified by reading the order of operations in `Register`. Called for level, mute, AND router roles. Pinned by `Two_channels_claiming_the_same_levelTag_logs_warn_and_overwrites`. Resolved.
+
+- **C5 — Per-control hydrate Warn.** `HydrateChangeGroupAction.TrySubscribe:178-199` logs Warn separately for `BuildAddControl=null` (group cap) and `TryEnqueue=false` (queue refused), each with the owner-description and tag name. Aggregate zero-subscribed Warn at `:160-164` is preserved as fallback. No happy-path behaviour change; existing tests pass. Resolved.
+
+### New-bug hunt on the fix commit
+
+- **`UpdateCacheAndRaise` empty-skip vs first AutoPoll on a routed output:** verified safe. AutoPoll value=5 → bankIndex=5 → `_registry.TryGetInputIdByBankIndex` returns `"mic5"` → `newSourceId` non-empty → guard at `:227` doesn't engage → event fires. AutoPoll value=0 on a never-cached output suppresses the event, which is the correct semantic (fresh subscription on an already-cleared output is not a "transition").
+- **`WarnIfTagCollides` and re-registration with same tags:** verified safe. `Register:230-258` removes the prior owner's level/mute/router entries from `_tagToChannelId` BEFORE `WarnIfTagCollides` runs at `:261-272`, so same-id re-registration sees no collision. `Re_registering_output_with_new_routerTag_remaps_the_router_set` covers the router half.
+- **`HydrateChangeGroupAction.TrySubscribe` log-volume on saturated queue:** acceptable as-is. On a 64-channel config the worst case is ~192 Warn lines per reconnect (level+mute+router); the log already escalates an Error for the AutoPoll itself if it can't enqueue. The condition (queue saturated during hydration) is itself a hard fault that warrants visibility, and rate-limiting would mask which tags failed. No change recommended.
+
+### Residual nits (non-blocking, untouched)
+
+- Pass-1 nit on `SPEC_COMPLIANCE.md:59` ("10 cases") still says 10; the file now has 14 `[Fact]` methods after the C1/C2 additions. Trivial drift; fix in the archive PR.
+
+### What I did NOT verify
+
+- Stryker mutation testing on the new guards (`UpdateCacheAndRaise` empty-skip, `BankIndex<1` reject, `WarnIfTagCollides`).
+- Behaviour on real QSC hardware.
+- Concurrent producer racing `Route` with an AutoPoll delta on the same output (the new empty-skip is a read-modify-write on `_outputToSource` without an explicit lock; `ConcurrentDictionary` makes each operation atomic but the `TryGetValue` → write pair is not, so a same-output Route+AutoPoll race could in theory drop one event — same shape as M3's documented benign rx race; not a regression).

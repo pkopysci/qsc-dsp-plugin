@@ -55,7 +55,7 @@
 - [x] 9.4 Coverage on `QscDspDevices.dll`: ≥ 90 % line.
 - [x] 9.5 DLL size (`-c Release`): ≤ 500 KB.
 - [x] 9.6 `openspec validate add-routing-and-zones --strict`: passes.
-- [ ] 9.7 Run `qsc-critic` agent locally; save report to this change's `REVIEW.md`. Address blockers before opening the PR.
+- [x] 9.7 Run `qsc-critic` agent locally; save report to this change's `REVIEW.md`. Two passes recorded; pass-2 verdict ✅ ship-ready. All pass-1 concerns addressed.
 
 ## 10. Commit + PR
 

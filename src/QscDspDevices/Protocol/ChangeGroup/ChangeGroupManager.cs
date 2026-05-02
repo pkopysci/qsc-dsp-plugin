@@ -257,6 +257,20 @@ public sealed class ChangeGroupManager : IAutoPollSubscription
             return;
         }
 
+        // Error response on the AutoPoll id surface (e.g. -32604 Standby
+        // or 5 ChangeGroupsExhausted) — the manager would otherwise
+        // silently believe the group is alive. Log and return; the next
+        // hydration cycle will re-attempt subscription. Cache-side
+        // reconciliation is handled by AudioControlService when the
+        // next successful AutoPoll arrives.
+        if (response.IsError)
+        {
+            Log.Warn(
+                _deviceId,
+                $"AutoPoll subscription returned error {response.Error?.Code} '{response.Error?.Message}'. The change group is no longer believed subscribed.");
+            return;
+        }
+
         if (response.Result is not JToken result)
         {
             return;

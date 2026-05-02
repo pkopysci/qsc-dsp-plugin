@@ -17,6 +17,23 @@ namespace QscDspDevices.AudioControl;
 /// the four <c>AudioInput*Changed</c> / <c>AudioOutput*Changed</c>
 /// events when AutoPoll deltas mutate the cache.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>Cache semantics — intent, not state.</b> <c>Set*</c> updates the
+/// in-process cache <i>before</i> attempting <c>TryEnqueue</c>. The
+/// cache therefore tracks the framework's most recent <i>intent</i>,
+/// not the Core's confirmed state. While disconnected, <c>Set*</c>
+/// records the intent and the queue silently refuses the wire write
+/// (M2 contract: queue refuses while disconnected). On reconnect, the
+/// hydration <c>ChangeGroup.AutoPoll</c> response replays the Core's
+/// real values and reconciles the cache — the framework will see one
+/// batch of <c>*Changed</c> events for any channel whose cached intent
+/// drifted from the Core's actual state. This is the documented and
+/// intentional shape; the alternative (refuse Set while disconnected)
+/// would force the framework's audio scenes into a per-call connection
+/// check, which the IAudioControl surface does not expose.
+/// </para>
+/// </remarks>
 public sealed class AudioControlService
 {
     private readonly string _deviceId;

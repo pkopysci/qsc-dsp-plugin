@@ -17,13 +17,29 @@ namespace QscDspDevices.LogicTriggers;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Cache-less by design. The framework's
+/// <b>Cache-less by design.</b> The framework's
 /// <c>DspLogicTriggerStateChanged</c> event signals "this trigger
 /// transitioned" (Single-arg, just the id), not "the new value
 /// is X". Coalescing on a cached value would suppress legitimate
 /// consecutive pulses on a momentary trigger that holds <c>true</c>
 /// briefly. The service therefore raises the event on every
 /// AutoPoll delta whose tag is registered.
+/// </para>
+/// <para>
+/// <b>Reconnect re-fires the event.</b> A consequence of cache-less
+/// dispatch: the first AutoPoll after every reconnect re-fires
+/// <c>LogicTriggerStateChanged</c> for every registered trigger,
+/// even when the Core's pre-disconnect state matched the post-
+/// reconnect state. Downstream consumers that need transition-only
+/// semantics should cache at their own layer.
+/// </para>
+/// <para>
+/// <b>Pulse failure is invisible to the framework.</b> Fire-and-
+/// forget — the dispatcher logs an error response (e.g. <c>-32604</c>
+/// Standby), but no signal reaches the framework because
+/// <c>IDspLogicTriggerSupport.PulseDspLogicTrigger</c> is
+/// void-returning and exposes no failure channel. Same shape as
+/// <c>AudioControlService</c>'s mute/level Set path.
 /// </para>
 /// </remarks>
 public sealed class LogicTriggerService

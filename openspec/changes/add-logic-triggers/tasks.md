@@ -42,7 +42,7 @@
 - [x] 8.4 Coverage on `QscDspDevices.dll`: ≥ 90 % line.
 - [x] 8.5 DLL size (`-c Release`): ≤ 500 KB.
 - [x] 8.6 `openspec validate add-logic-triggers --strict`: passes.
-- [ ] 8.7 Run `qsc-critic` agent locally; save report to this change's `REVIEW.md`. Address blockers before opening the PR.
+- [x] 8.7 Run `qsc-critic` agent locally; save report to this change's `REVIEW.md`. Pass-1 verdict ⚠ ship-with-caveats; the one Concern (rx-thread exception isolation) was fixed in-milestone via `ConnectionManager.DispatchFrameSafely`. Three nits accepted as documented (two with `<remarks>` callouts in `LogicTriggerService`, one bypass-test acknowledged).
 
 ## 9. Commit + PR
 

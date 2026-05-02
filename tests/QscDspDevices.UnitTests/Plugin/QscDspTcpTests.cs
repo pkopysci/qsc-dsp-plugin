@@ -22,6 +22,8 @@ namespace QscDspDevices.UnitTests.Plugin;
 /// </summary>
 public sealed class QscDspTcpTests
 {
+    private static readonly string[] ExpectedSteadyStateRoles = { "session", "send", "keepalive" };
+
     [Fact]
     public void Constructor_sets_Manufacturer_to_QSC_and_Model_to_QSysCore()
     {
@@ -311,9 +313,12 @@ public sealed class QscDspTcpTests
     public async Task ThreadCensus_reports_one_plugin_thread_when_session_is_active()
     {
         // Per the threading-budget spec: a Connected plugin reports plugin
-        // threads alive (M2 ships exactly one — the session task; M3 will
-        // grow this to three). This test pins the M2 behaviour: the
-        // session task DOES register with the census.
+        // threads alive. Until the connect succeeds this is the session
+        // task only (1); after Connected it reaches the M3 steady-state
+        // of 3 (session + send + keepalive). The send + keepalive Tasks
+        // are wired in OnConnectedAsync, so we assert >=1 here against
+        // the pre-Connected window. The next test pins the post-Connect
+        // steady-state of 3 explicitly.
         using var sut = new TestableQscDspTcp(new DeterministicClock());
         sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
         sut.ThreadCensus.AliveCount.Should().Be(0);
@@ -324,6 +329,30 @@ public sealed class QscDspTcpTests
         // The session task has registered; M2 ships one such thread.
         await WaitForAsync(() => sut.ThreadCensus.AliveCount >= 1, TimeSpan.FromSeconds(10));
         sut.ThreadCensus.Snapshot().Should().Contain("session");
+    }
+
+    [Fact]
+    public async Task ThreadCensus_reaches_three_in_steady_state_Connected()
+    {
+        // Per the M3 ARCHITECTURE.md "Threading model — M3 (shipped)"
+        // section, steady-state Connected reports exactly three plugin
+        // units of work: the session task (M2) plus the M3 send loop
+        // and keepalive ticker. The receive path is event-driven and
+        // does not register. This test pins the contract; a future
+        // regression that drops one of the M3 registrations would
+        // otherwise pass under the looser >=1 assertion above.
+        using var sut = new TestableQscDspTcp(new DeterministicClock());
+        sut.Initialize("dsp-1", 0, "127.0.0.1", 1710, "u", "p");
+
+        sut.Connect();
+        await WaitForAsync(() => sut.StubConnectCallCount > 0, TimeSpan.FromSeconds(10));
+        sut.SimulateConnectSuccess();
+        await WaitForAsync(() => sut.IsOnline, TimeSpan.FromSeconds(10));
+
+        // The send + keepalive registrations land just after
+        // OnConnectedAsync transitions to Connected. Wait for them.
+        await WaitForAsync(() => sut.ThreadCensus.AliveCount == 3, TimeSpan.FromSeconds(10));
+        sut.ThreadCensus.Snapshot().Should().BeEquivalentTo(ExpectedSteadyStateRoles);
     }
 
     [Fact]

@@ -126,14 +126,12 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            JsonRpcRequest? addLevel = _groupManager.BuildAddControl(ChangeGroupManager.PluginGroupId, channel.LevelTag);
-            if (addLevel is not null && _queue.TryEnqueue(addLevel))
+            if (TrySubscribe(channel.LevelTag, $"channel '{channel.Id}' level"))
             {
                 subscribed++;
             }
 
-            JsonRpcRequest? addMute = _groupManager.BuildAddControl(ChangeGroupManager.PluginGroupId, channel.MuteTag);
-            if (addMute is not null && _queue.TryEnqueue(addMute))
+            if (TrySubscribe(channel.MuteTag, $"channel '{channel.Id}' mute"))
             {
                 subscribed++;
             }
@@ -142,8 +140,7 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
             // Inputs and routerless outputs have an empty RouterTag.
             if (!channel.IsInput && !string.IsNullOrEmpty(channel.RouterTag))
             {
-                JsonRpcRequest? addRouter = _groupManager.BuildAddControl(ChangeGroupManager.PluginGroupId, channel.RouterTag);
-                if (addRouter is not null && _queue.TryEnqueue(addRouter))
+                if (TrySubscribe(channel.RouterTag, $"output '{channel.Id}' router"))
                 {
                     subscribed++;
                 }
@@ -151,11 +148,10 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
         }
 
         // M4: subscribe every (channelId, zoneId) pair's controlTag.
-        foreach ((string _, string _, string controlTag) in zones)
+        foreach ((string channelId, string zoneId, string controlTag) in zones)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            JsonRpcRequest? addZone = _groupManager.BuildAddControl(ChangeGroupManager.PluginGroupId, controlTag);
-            if (addZone is not null && _queue.TryEnqueue(addZone))
+            if (TrySubscribe(controlTag, $"zone '({channelId}, {zoneId})'"))
             {
                 subscribed++;
             }
@@ -177,5 +173,28 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
         }
 
         Log.Notice(_deviceId, $"Change group '{ChangeGroupManager.PluginGroupId}' subscribed ({subscribed} controls) at {ChangeGroupManager.DefaultAutoPollSeconds * 1000:0}ms AutoPoll.");
+    }
+
+    private bool TrySubscribe(string controlName, string ownerDescription)
+    {
+        // Group-cap rejection (BuildAddControl returns null) and queue
+        // refusal (TryEnqueue returns false) are both observable here.
+        // Log per-control failure so a partial hydration surfaces in
+        // diagnostics; the previous M3 shape silently absorbed both
+        // and only Logger.Warn'd the all-zero case.
+        JsonRpcRequest? add = _groupManager.BuildAddControl(ChangeGroupManager.PluginGroupId, controlName);
+        if (add is null)
+        {
+            Log.Warn(_deviceId, $"Change-group hydration could not build AddControl for {ownerDescription} (tag '{controlName}'); group cap reached?");
+            return false;
+        }
+
+        if (!_queue.TryEnqueue(add))
+        {
+            Log.Warn(_deviceId, $"Change-group hydration could not enqueue AddControl for {ownerDescription} (tag '{controlName}'); queue refused.");
+            return false;
+        }
+
+        return true;
     }
 }

@@ -169,6 +169,59 @@ public sealed class AudioRoutingServiceTests
     }
 
     [Fact]
+    public void Clear_on_a_never_routed_output_does_not_fire_RouteChanged()
+    {
+        using CommandQueue queue = NewQueue();
+        var registry = new AudioChannelRegistry("dsp-1");
+        registry.RegisterOutput(new AudioChannel("out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags, "mixer.out1.source"));
+        var sut = new AudioRoutingService("dsp-1", registry, queue, new IdGenerator());
+
+        bool fired = false;
+        sut.RouteChanged += (_, _) => fired = true;
+
+        sut.Clear("out1");
+
+        // The Control.Set with Value=0 IS sent (idempotent on the wire,
+        // safe-by-default for an unknown server-side state) but the
+        // empty→empty transition does NOT fire the framework event.
+        fired.Should().BeFalse();
+        sut.GetCurrentSource("out1").Should().Be(string.Empty);
+        queue.SnapshotPending().Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void Route_rejects_a_source_with_invalid_bank_index_zero()
+    {
+        using CommandQueue queue = NewQueue();
+        var registry = new AudioChannelRegistry("dsp-1");
+
+        // bankIndex=0 is the QSC "no source" sentinel — routing this
+        // input would clear the output instead, contradicting the cache.
+        registry.RegisterInput(new AudioChannel("badmic", "lvl", "mute", -80, 0, true, 0, 0, NoTags));
+        registry.RegisterOutput(new AudioChannel("out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags, "mixer.out1.source"));
+        var sut = new AudioRoutingService("dsp-1", registry, queue, new IdGenerator());
+
+        sut.Route("badmic", "out1");
+
+        queue.SnapshotPending().Should().BeEmpty();
+        sut.GetCurrentSource("out1").Should().Be(string.Empty);
+    }
+
+    [Fact]
+    public void Route_rejects_a_source_with_negative_bank_index()
+    {
+        using CommandQueue queue = NewQueue();
+        var registry = new AudioChannelRegistry("dsp-1");
+        registry.RegisterInput(new AudioChannel("badmic", "lvl", "mute", -80, 0, true, 0, -1, NoTags));
+        registry.RegisterOutput(new AudioChannel("out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags, "mixer.out1.source"));
+        var sut = new AudioRoutingService("dsp-1", registry, queue, new IdGenerator());
+
+        sut.Route("badmic", "out1");
+
+        queue.SnapshotPending().Should().BeEmpty();
+    }
+
+    [Fact]
     public void Constructor_with_null_args_throws()
     {
         using CommandQueue q = NewQueue();

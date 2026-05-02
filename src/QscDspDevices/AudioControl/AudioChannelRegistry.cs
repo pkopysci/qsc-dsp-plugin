@@ -258,6 +258,8 @@ public sealed class AudioChannelRegistry
             }
 
             _channels[channel.Id] = channel;
+            WarnIfTagCollides(channel.LevelTag, channel.Id, "level");
+            WarnIfTagCollides(channel.MuteTag, channel.Id, "mute");
             _tagToChannelId[channel.LevelTag] = channel.Id;
             _tagToChannelId[channel.MuteTag] = channel.Id;
 
@@ -267,9 +269,27 @@ public sealed class AudioChannelRegistry
             }
             else if (!string.IsNullOrEmpty(channel.RouterTag))
             {
+                WarnIfTagCollides(channel.RouterTag, channel.Id, "router");
                 _routerTags.Add(channel.RouterTag);
                 _tagToChannelId[channel.RouterTag] = channel.Id;
             }
+        }
+    }
+
+    private void WarnIfTagCollides(string tag, string newOwnerId, string role)
+    {
+        // Hot path on every (re)register — keep the lookup cheap. If
+        // an existing tag→channelId entry points at a *different* owner
+        // (a Designer-side configuration error: two channels claim the
+        // same Q-SYS named control), the silent last-writer-wins would
+        // mis-route AutoPoll deltas to the wrong owner. Log Warn so the
+        // collision is observable in diagnostics.
+        if (_tagToChannelId.TryGetValue(tag, out string? existingOwner)
+            && !string.Equals(existingOwner, newOwnerId, StringComparison.Ordinal))
+        {
+            Log.Warn(
+                _deviceId,
+                $"Channel '{newOwnerId}' registers {role}-tag '{tag}' that is already claimed by channel '{existingOwner}'. The new registration will overwrite; AutoPoll deltas on this tag will dispatch to '{newOwnerId}' going forward.");
         }
     }
 }

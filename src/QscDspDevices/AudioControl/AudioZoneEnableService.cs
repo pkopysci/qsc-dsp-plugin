@@ -17,6 +17,16 @@ namespace QscDspDevices.AudioControl;
 /// and raises <c>AudioZoneEnableChanged</c> with the
 /// <c>(channelId, zoneId)</c> args the framework spec requires.
 /// </summary>
+/// <remarks>
+/// <b>Cache semantics — intent, not state.</b> <see cref="Set"/> and
+/// <see cref="Toggle"/> update the cache before attempting
+/// <c>TryEnqueue</c>. While disconnected, the queue refuses the wire
+/// write but the cache still reflects framework intent. On reconnect,
+/// the AutoPoll on the controlTag replays the Core's real value and
+/// the cache reconciles. Framework-side <see cref="Query"/> reads
+/// during the disconnected window therefore reflect intent, not
+/// server state. Same shape as <see cref="AudioControlService"/>.
+/// </remarks>
 public sealed class AudioZoneEnableService
 {
     private readonly string _deviceId;

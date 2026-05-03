@@ -189,9 +189,59 @@ BEFORE NotifyOnlineStatus per README §3 (verified by test
 `Connect_drives_IsOnline_true_then_NotifyOnlineStatus` reading IsOnline
 inside the ConnectionChanged handler).
 
-### Redundant core failover — M6
+### Redundant core failover — M6 (shipped)
 
-(_to be added in M6_)
+Two `ConnectionManager` instances (primary + backup) sit behind a
+`RedundantConnectionPair` coordinator. `EngineStatusObserver` per slot
+parses incoming `EngineStatus { State }` notifications. The
+coordinator asks `SwitchbackPolicy` for the new active slot on every
+state change; on transition it (a) re-points the
+`RoutingCommandQueue` facade to the new manager's underlying queue
+and (b) re-attaches the AutoPoll fanout to the new manager's
+`ChangeGroupManager`.
+
+```
+       ┌─────────────────────┐                  ┌─────────────────────┐
+       │  Primary Core (TCP) │                  │  Backup Core (TCP)  │
+       └──────────┬──────────┘                  └──────────┬──────────┘
+                  │ EngineStatus push (State)              │
+                  ▼                                        ▼
+   ┌──────────────────────────┐            ┌──────────────────────────┐
+   │ Primary ConnectionManager│            │ Backup  ConnectionManager│
+   └─────────┬────────────────┘            └─────────┬────────────────┘
+             │ NotificationReceived                  │
+             ▼                                       ▼
+       ┌─────────────────────┐                ┌─────────────────────┐
+       │ EngineStatusObserver│                │ EngineStatusObserver│
+       └──────────┬──────────┘                └──────────┬──────────┘
+                  │                                      │
+                  └────────┬─────────────────────────────┘
+                           ▼
+              ┌────────────────────────────┐
+              │ RedundantConnectionPair    │ ← SwitchbackPolicy decides
+              │  • picks active slot       │
+              │  • re-points routing queue │
+              │  • re-attaches fanout      │
+              │  • fires events            │
+              └────────────┬───────────────┘
+                           │
+                ┌──────────┴──────────┐
+                ▼                     ▼
+      RoutingCommandQueue   AudioControlServiceFanout
+      (forwards to active   (re-subscribed to active
+       manager's queue)      ChangeGroupManager)
+```
+
+**Switchback policy.** Default `RespectQscFailoverGuidance = false`
+honours the README's "switch back to the primary once it comes back
+online" rule. Setting the flag to `true` opts into QSC's recommended
+sticky-on-current behaviour.
+
+**Thread budget deviation.** A redundant pair runs two
+`ConnectionManager` instances simultaneously, doubling the per-pair
+plugin-thread budget from ≤ 3 (single-Core) to ≤ 6. Documented in
+SPEC_COMPLIANCE row 4.1; the README's intent ("don't spawn unbounded
+threads") is preserved.
 
 ## Concurrency policy
 

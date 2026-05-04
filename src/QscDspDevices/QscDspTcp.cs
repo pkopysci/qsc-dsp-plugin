@@ -86,6 +86,17 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     private RedundantConnectionPair? _redundantPair;
     private bool _disposed;
 
+    // ECP backend (M-ECP). Exactly one of {QRC fields above, ECP fields
+    // here} is wired during Initialize, picked by the well-known port
+    // (1710 = QRC, 1702 = ECP).
+    private bool _useEcp;
+    private QscDspDevices.Connectivity.Ecp.EcpConnectionManager? _ecpConnection;
+    private QscDspDevices.Connectivity.Ecp.EcpCommandQueue? _ecpQueue;
+    private QscDspDevices.AudioControl.Ecp.EcpAudioControlService? _ecpAudio;
+    private QscDspDevices.AudioControl.Ecp.EcpAudioRoutingService? _ecpRouting;
+    private QscDspDevices.AudioControl.Ecp.EcpAudioZoneEnableService? _ecpZones;
+    private QscDspDevices.LogicTriggers.Ecp.EcpLogicTriggerService? _ecpTriggers;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="QscDspTcp"/> class
     /// with production wall-clock timing.
@@ -203,6 +214,24 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         // connection); it lands when M6 introduces redundancy fan-out.
         _ = coreId;
 
+        // Protocol selection by well-known port per add-ecp-protocol §3:
+        // 1710 = QRC, 1702 = ECP. Other ports default to QRC with a
+        // Logger.Notice. Stash the decision before the rest of the
+        // wiring so the ECP branch below can short-circuit.
+        if (port == 1702)
+        {
+            _useEcp = true;
+            InitializeEcp(hostId, hostname, port, username, password);
+            IsInitialized = true;
+            Log.Notice(Id, $"Initialized ECP backend for {hostname}:{port} (coreId={coreId}).");
+            return;
+        }
+
+        if (port != 1710)
+        {
+            Log.Notice(hostId, $"Non-standard port {port}; assuming QRC. Use port 1702 to select ECP.");
+        }
+
         // Stash credentials behind a lock so the LogonAction's callback
         // sees fresh values across reconnects without racing a concurrent
         // Initialize.
@@ -283,6 +312,19 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     public override void Connect()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_useEcp)
+        {
+            if (_ecpConnection is null)
+            {
+                Log.Error(string.IsNullOrEmpty(Id) ? "QscDspTcp" : Id, "Connect() called before Initialize().");
+                return;
+            }
+
+            _ecpConnection.Connect();
+            return;
+        }
+
         if (_connectionManager is null)
         {
             string deviceId = string.IsNullOrEmpty(Id) ? "QscDspTcp" : Id;
@@ -316,6 +358,12 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
             return;
         }
 
+        if (_useEcp)
+        {
+            _ecpConnection?.Disconnect();
+            return;
+        }
+
         if (_redundantPair is not null)
         {
             _redundantPair.Disconnect();
@@ -338,6 +386,12 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     public void SetAudioInputLevel(string id, int level)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(SetAudioInputLevel), nameof(id));
+        if (_useEcp)
+        {
+            _ecpAudio?.SetLevel(id, level);
+            return;
+        }
+
         _audioService?.SetLevel(id, level);
     }
 
@@ -345,13 +399,19 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     public int GetAudioInputLevel(string id)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(GetAudioInputLevel), nameof(id));
-        return _audioService?.GetLevel(id) ?? 0;
+        return _useEcp ? (_ecpAudio?.GetLevel(id) ?? 0) : (_audioService?.GetLevel(id) ?? 0);
     }
 
     /// <inheritdoc />
     public void SetAudioInputMute(string id, bool mute)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(SetAudioInputMute), nameof(id));
+        if (_useEcp)
+        {
+            _ecpAudio?.SetMute(id, mute);
+            return;
+        }
+
         _audioService?.SetMute(id, mute);
     }
 
@@ -359,13 +419,19 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     public bool GetAudioInputMute(string id)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(GetAudioInputMute), nameof(id));
-        return _audioService?.GetMute(id) ?? false;
+        return _useEcp ? (_ecpAudio?.GetMute(id) ?? false) : (_audioService?.GetMute(id) ?? false);
     }
 
     /// <inheritdoc />
     public void SetAudioOutputLevel(string id, int level)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(SetAudioOutputLevel), nameof(id));
+        if (_useEcp)
+        {
+            _ecpAudio?.SetLevel(id, level);
+            return;
+        }
+
         _audioService?.SetLevel(id, level);
     }
 
@@ -373,13 +439,19 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     public int GetAudioOutputLevel(string id)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(GetAudioOutputLevel), nameof(id));
-        return _audioService?.GetLevel(id) ?? 0;
+        return _useEcp ? (_ecpAudio?.GetLevel(id) ?? 0) : (_audioService?.GetLevel(id) ?? 0);
     }
 
     /// <inheritdoc />
     public void SetAudioOutputMute(string id, bool mute)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(SetAudioOutputMute), nameof(id));
+        if (_useEcp)
+        {
+            _ecpAudio?.SetMute(id, mute);
+            return;
+        }
+
         _audioService?.SetMute(id, mute);
     }
 
@@ -387,13 +459,19 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     public bool GetAudioOutputMute(string id)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(GetAudioOutputMute), nameof(id));
-        return _audioService?.GetMute(id) ?? false;
+        return _useEcp ? (_ecpAudio?.GetMute(id) ?? false) : (_audioService?.GetMute(id) ?? false);
     }
 
     /// <inheritdoc />
     public void RecallAudioPreset(string id)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(RecallAudioPreset), nameof(id));
+        if (_useEcp)
+        {
+            _ecpAudio?.RecallPreset(id);
+            return;
+        }
+
         if (_presetService is null)
         {
             string deviceId = string.IsNullOrEmpty(Id) ? "QscDspTcp" : Id;
@@ -440,6 +518,11 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     public string GetCurrentAudioSource(string outputId)
     {
         ParameterValidator.ThrowIfNullOrEmpty(outputId, nameof(GetCurrentAudioSource), nameof(outputId));
+        if (_useEcp)
+        {
+            return _ecpRouting?.Query(outputId) ?? string.Empty;
+        }
+
         return _routingService?.GetCurrentSource(outputId) ?? string.Empty;
     }
 
@@ -448,6 +531,12 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     {
         ParameterValidator.ThrowIfNullOrEmpty(sourceId, nameof(RouteAudio), nameof(sourceId));
         ParameterValidator.ThrowIfNullOrEmpty(outputId, nameof(RouteAudio), nameof(outputId));
+        if (_useEcp)
+        {
+            _ecpRouting?.Route(sourceId, outputId);
+            return;
+        }
+
         _routingService?.Route(sourceId, outputId);
     }
 
@@ -455,6 +544,12 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     public void ClearAudioRoute(string outputId)
     {
         ParameterValidator.ThrowIfNullOrEmpty(outputId, nameof(ClearAudioRoute), nameof(outputId));
+        if (_useEcp)
+        {
+            _ecpRouting?.Clear(outputId);
+            return;
+        }
+
         _routingService?.Clear(outputId);
     }
 
@@ -480,6 +575,12 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     {
         ParameterValidator.ThrowIfNullOrEmpty(channelId, nameof(ToggleAudioZoneEnable), nameof(channelId));
         ParameterValidator.ThrowIfNullOrEmpty(zoneId, nameof(ToggleAudioZoneEnable), nameof(zoneId));
+        if (_useEcp)
+        {
+            _ecpZones?.Toggle(channelId, zoneId);
+            return;
+        }
+
         _zoneEnableService?.Toggle(channelId, zoneId);
     }
 
@@ -488,6 +589,12 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     {
         ParameterValidator.ThrowIfNullOrEmpty(channelId, nameof(SetAudioZoneEnable), nameof(channelId));
         ParameterValidator.ThrowIfNullOrEmpty(zoneId, nameof(SetAudioZoneEnable), nameof(zoneId));
+        if (_useEcp)
+        {
+            _ecpZones?.Set(channelId, zoneId, enable);
+            return;
+        }
+
         _zoneEnableService?.Set(channelId, zoneId, enable);
     }
 
@@ -496,6 +603,11 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     {
         ParameterValidator.ThrowIfNullOrEmpty(channelId, nameof(QueryAudioZoneEnable), nameof(channelId));
         ParameterValidator.ThrowIfNullOrEmpty(zoneId, nameof(QueryAudioZoneEnable), nameof(zoneId));
+        if (_useEcp)
+        {
+            return _ecpZones?.Query(channelId, zoneId) ?? false;
+        }
+
         return _zoneEnableService?.Query(channelId, zoneId) ?? false;
     }
 
@@ -512,6 +624,12 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     public void PulseDspLogicTrigger(string id)
     {
         ParameterValidator.ThrowIfNullOrEmpty(id, nameof(PulseDspLogicTrigger), nameof(id));
+        if (_useEcp)
+        {
+            _ecpTriggers?.Pulse(id);
+            return;
+        }
+
         _triggerService?.Pulse(id);
     }
 
@@ -528,6 +646,29 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     public void SetBackupDeviceConnection(string hostname, int port)
     {
         ParameterValidator.ThrowIfNullOrEmpty(hostname, nameof(SetBackupDeviceConnection), nameof(hostname));
+
+        // M-ECP: redundant pairs must use the same protocol on both
+        // sides per spec redundancy.md. The primary's protocol is
+        // pinned at Initialize() time; refuse any mismatch.
+        bool primaryIsEcp = _useEcp;
+        bool backupIsEcp = port == 1702;
+        if (primaryIsEcp != backupIsEcp)
+        {
+            string deviceId = string.IsNullOrEmpty(Id) ? "QscDspTcp" : Id;
+            Log.Error(deviceId, $"redundant pair must use same protocol on both sides; call refused (primary {(primaryIsEcp ? "ECP" : "QRC")}, backup port {port}).");
+            return;
+        }
+
+        if (_useEcp)
+        {
+            // ECP redundancy is implemented via sg-poll on each side
+            // (see slice 8); the M6 RedundantConnectionPair coordinator
+            // does not yet plug into the EcpConnectionManager. For
+            // M-ECP-part-2, refuse with a Logger.Notice and document
+            // the gap; the integrator falls back to manual failover.
+            Log.Notice(string.IsNullOrEmpty(Id) ? "QscDspTcp" : Id, $"Redundant pair under ECP is not yet wired; backup '{hostname}:{port}' ignored. Tracked as M-ECP-part-3.");
+            return;
+        }
 
         if (_redundantPair is not null)
         {
@@ -589,6 +730,14 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
             _transport?.Dispose();
             _queue?.Dispose();
             _routingQueue?.Dispose();
+
+            if (_ecpConnection is not null)
+            {
+                _ecpConnection.StateChanged -= OnEcpStateChanged;
+                _ecpConnection.Dispose();
+            }
+
+            _ecpQueue?.Dispose();
         }
     }
 
@@ -605,6 +754,78 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     protected virtual IConnectionTransport BuildTransport(string hostname, int port)
         => new BasicTcpClientTransport(hostname, port);
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "The ECP transport, queue, and ConnectionManager are stashed in long-lived fields and disposed in Dispose. CA2000 does not see the ownership transfer through field assignment.")]
+    private void InitializeEcp(string hostId, string hostname, int port, string username, string password)
+    {
+        var transport = BuildTransport(hostname, port);
+        var queue = new QscDspDevices.Connectivity.Ecp.EcpCommandQueue(hostId);
+        var dispatcher = new QscDspDevices.Protocol.Ecp.EcpDispatcher(hostId);
+        var creds = string.IsNullOrEmpty(username) && string.IsNullOrEmpty(password)
+            ? null
+            : new QscDspDevices.Connectivity.Ecp.EcpCredentials(username ?? string.Empty, password ?? string.Empty);
+
+        var connection = new QscDspDevices.Connectivity.Ecp.EcpConnectionManager(
+            hostId,
+            transport,
+            new ReconnectStrategy(_clock),
+            queue,
+            dispatcher,
+            credentialsSource: () => creds,
+            threadCensus: _threadCensus);
+
+        connection.StateChanged += OnEcpStateChanged;
+
+        var scaler = new LevelScaler(hostId);
+        var audio = new QscDspDevices.AudioControl.Ecp.EcpAudioControlService(hostId, _registry, scaler, queue);
+        var routing = new QscDspDevices.AudioControl.Ecp.EcpAudioRoutingService(hostId, _registry, queue);
+        var zones = new QscDspDevices.AudioControl.Ecp.EcpAudioZoneEnableService(hostId, _zoneRegistry, queue);
+        var triggers = new QscDspDevices.LogicTriggers.Ecp.EcpLogicTriggerService(hostId, _triggerRegistry, queue);
+
+        audio.AudioLevelChanged += (_, args) =>
+        {
+            AudioOutputLevelChanged?.Invoke(this, args);
+            AudioInputLevelChanged?.Invoke(this, args);
+        };
+        audio.AudioMuteChanged += (_, args) =>
+        {
+            AudioOutputMuteChanged?.Invoke(this, args);
+            AudioInputMuteChanged?.Invoke(this, args);
+        };
+        routing.RouteChanged += (_, args) => AudioRouteChanged?.Invoke(this, args);
+        zones.ZoneEnableChanged += (_, args) => AudioZoneEnableChanged?.Invoke(this, args);
+
+        _transport = transport;
+        _ecpConnection = connection;
+        _ecpQueue = queue;
+        _ecpAudio = audio;
+        _ecpRouting = routing;
+        _ecpZones = zones;
+        _ecpTriggers = triggers;
+        _primaryHostname = hostname;
+        _primaryPort = port;
+    }
+
+    private void OnEcpStateChanged(object? sender, gcu_common_utils.GenericEventArgs.GenericSingleEventArgs<ConnectionState> args)
+    {
+        switch (args.Arg)
+        {
+            case ConnectionState.Connected:
+                IsOnline = true;
+                NotifyOnlineStatus();
+                break;
+            case ConnectionState.Disconnecting:
+            case ConnectionState.Disconnected:
+                IsOnline = false;
+                NotifyOnlineStatus();
+                break;
+            case ConnectionState.Connecting:
+                break;
+        }
+    }
+
     /// <summary>
     /// Builds the per-connection plumbing — transport, queue, dispatcher,
     /// change-group manager, post-connect chain, and connection manager.
@@ -615,7 +836,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     /// <param name="hostId">The owning device id.</param>
     /// <param name="hostname">The remote hostname.</param>
     /// <param name="port">The remote port.</param>
-    /// <param name="ids">Shared id generator (one per <see cref="QscDspTcp"/>).</param>
+    /// <param name="ids">Shared id generator.</param>
     /// <param name="fanout">Shared fanout dispatcher.</param>
     /// <returns>The connection's resources.</returns>
     [System.Diagnostics.CodeAnalysis.SuppressMessage(

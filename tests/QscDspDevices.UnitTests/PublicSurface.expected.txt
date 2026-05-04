@@ -1,0 +1,396 @@
+type QscDspDevices.AudioControl.AudioChannel
+  ctor (String,String,String,Int32,Int32,Boolean,Int32,Int32,IReadOnlyList`1,String)
+  method AudioChannel <Clone>$()
+  method Boolean Equals(AudioChannel)
+  method Boolean Equals(Object)
+  method Int32 GetHashCode()
+  method String ToString()
+  method Void Deconstruct(String&,String&,String&,Int32&,Int32&,Boolean&,Int32&,Int32&,IReadOnlyList`1&,String&)
+  property Boolean IsInput { get; set; }
+  property IReadOnlyList`1 Tags { get; set; }
+  property Int32 BankIndex { get; set; }
+  property Int32 LevelMax { get; set; }
+  property Int32 LevelMin { get; set; }
+  property Int32 RouterIndex { get; set; }
+  property String Id { get; set; }
+  property String LevelTag { get; set; }
+  property String MuteTag { get; set; }
+  property String RouterTag { get; set; }
+type QscDspDevices.AudioControl.AudioChannelRegistry
+  ctor (String)
+  method Boolean IsRouterTag(String)
+  method Boolean TryGetChannel(String,AudioChannel&)
+  method Boolean TryGetChannelIdByTag(String,String&)
+  method Boolean TryGetInputIdByBankIndex(Int32,String&)
+  method Boolean TryGetPreset(String,AudioPreset&)
+  method IReadOnlyList`1 GetAllChannels()
+  method IReadOnlyList`1 GetInputIds()
+  method IReadOnlyList`1 GetOutputIds()
+  method IReadOnlyList`1 GetPresetIds()
+  method Void RegisterInput(AudioChannel)
+  method Void RegisterOutput(AudioChannel)
+  method Void RegisterPreset(AudioPreset)
+type QscDspDevices.AudioControl.AudioControlService
+  ctor (String,AudioChannelRegistry,LevelScaler,CommandQueue,IdGenerator)
+  event EventHandler`1 AudioInputLevelChanged
+  event EventHandler`1 AudioInputMuteChanged
+  event EventHandler`1 AudioOutputLevelChanged
+  event EventHandler`1 AudioOutputMuteChanged
+  method Boolean GetMute(String)
+  method Int32 GetLevel(String)
+  method Void OnDeviceUpdate(ChangeGroupDelta)
+  method Void SetLevel(String,Int32)
+  method Void SetMute(String,Boolean)
+type QscDspDevices.AudioControl.AudioControlServiceFanout
+  ctor (AudioChannelRegistry,AudioZoneRegistry,AudioRoutingService,AudioZoneEnableService,AudioControlService)
+  ctor (AudioChannelRegistry,AudioZoneRegistry,LogicTriggerRegistry,AudioRoutingService,AudioZoneEnableService,LogicTriggerService,AudioControlService)
+  method Void Dispatch(ChangeGroupDelta)
+type QscDspDevices.AudioControl.AudioPreset
+  ctor (String,String,Int32)
+  method AudioPreset <Clone>$()
+  method Boolean Equals(AudioPreset)
+  method Boolean Equals(Object)
+  method Int32 GetHashCode()
+  method String ToString()
+  method Void Deconstruct(String&,String&,Int32&)
+  property Int32 Index { get; set; }
+  property String Bank { get; set; }
+  property String Id { get; set; }
+type QscDspDevices.AudioControl.AudioRoutingService
+  ctor (String,AudioChannelRegistry,CommandQueue,IdGenerator)
+  event EventHandler`1 RouteChanged
+  field Int32 ClearedSourceValue
+  method String GetCurrentSource(String)
+  method Void Clear(String)
+  method Void OnDeviceUpdate(ChangeGroupDelta)
+  method Void Route(String,String)
+type QscDspDevices.AudioControl.AudioZoneEnableService
+  ctor (String,AudioZoneRegistry,CommandQueue,IdGenerator)
+  event EventHandler`1 ZoneEnableChanged
+  method Boolean Query(String,String)
+  method Void OnDeviceUpdate(ChangeGroupDelta)
+  method Void Set(String,String,Boolean)
+  method Void Toggle(String,String)
+type QscDspDevices.AudioControl.AudioZoneRegistry
+  ctor (String)
+  method Boolean IsZoneTag(String)
+  method Boolean Remove(String,String)
+  method Boolean TryGet(String,String,String&)
+  method Boolean TryGetPair(String,ValueTuple`2&)
+  method Boolean TryRegister(String,String,String)
+  method IReadOnlyList`1 GetAll()
+type QscDspDevices.AudioControl.LevelScaler
+  ctor (String)
+  field Int32 FrameworkMax
+  field Int32 FrameworkMin
+  method Double ToDevice(Int32,Int32,Int32,String)
+  method Int32 ToFramework(Double,Int32,Int32)
+type QscDspDevices.AudioControl.PresetService
+  ctor (String,AudioChannelRegistry,CommandQueue,IdGenerator)
+  method Void Recall(String)
+type QscDspDevices.Connectivity.ConnectionManager
+  ctor (String,IConnectionTransport,ReconnectStrategy,CommandQueue,JsonRpcDispatcher,IPostConnectAction,ThreadCensus,IQrcClock,IdGenerator)
+  event EventHandler`1 StateChanged
+  field TimeSpan KeepaliveTickInterval
+  method Task WaitForDisconnectedAsync(TimeSpan)
+  method Void Connect()
+  method Void Disconnect()
+  method Void Dispose()
+  property ConnectionState State { get; }
+  property JsonRpcDispatcher Dispatcher { get; }
+  property ThreadCensus ThreadCensus { get; }
+type QscDspDevices.Connectivity.ConnectionState
+  field ConnectionState Connected
+  field ConnectionState Connecting
+  field ConnectionState Disconnected
+  field ConnectionState Disconnecting
+  field Int32 value__
+type QscDspDevices.Connectivity.IPostConnectAction
+  method Task RunAsync(CancellationToken)
+type QscDspDevices.Connectivity.NoopPostConnectAction
+  ctor ()
+  method Task RunAsync(CancellationToken)
+type QscDspDevices.Connectivity.PostConnect.CompositePostConnectAction
+  ctor (IReadOnlyList`1)
+  method Task RunAsync(CancellationToken)
+type QscDspDevices.Connectivity.PostConnect.HydrateChangeGroupAction
+  ctor (String,AudioChannelRegistry,AudioZoneRegistry,ChangeGroupManager,CommandQueue,JsonRpcDispatcher,LogonAction)
+  ctor (String,AudioChannelRegistry,AudioZoneRegistry,LogicTriggerRegistry,ChangeGroupManager,CommandQueue,JsonRpcDispatcher,LogonAction)
+  ctor (String,AudioChannelRegistry,ChangeGroupManager,CommandQueue,JsonRpcDispatcher,LogonAction)
+  method Task RunAsync(CancellationToken)
+type QscDspDevices.Connectivity.PostConnect.LogonAction
+  ctor (String,Func`1,CommandQueue,JsonRpcDispatcher,IdGenerator)
+  field TimeSpan ResponseTimeout
+  method Task RunAsync(CancellationToken)
+  method Task`1 WaitForCompletionAsync()
+type QscDspDevices.Connectivity.PostConnect.LogonCredentials
+  ctor (String,String)
+  method Boolean Equals(LogonCredentials)
+  method Boolean Equals(Object)
+  method Int32 GetHashCode()
+  method LogonCredentials <Clone>$()
+  method String ToString()
+  method Void Deconstruct(String&,String&)
+  property Boolean IsConfigured { get; }
+  property LogonCredentials Empty { get; }
+  property String Password { get; set; }
+  property String Username { get; set; }
+type QscDspDevices.Connectivity.ReconnectStrategy
+  ctor (IQrcClock)
+  field TimeSpan Interval
+  method Task WaitForNextAttemptAsync(CancellationToken)
+type QscDspDevices.Connectivity.Redundancy.CoreSlot
+  field CoreSlot Backup
+  field CoreSlot Primary
+  field Int32 value__
+type QscDspDevices.Connectivity.Redundancy.EngineState
+  field EngineState Active
+  field EngineState Idle
+  field EngineState Standby
+  field EngineState Unknown
+  field Int32 value__
+type QscDspDevices.Connectivity.Redundancy.EngineStatusObserver
+  ctor (String,JsonRpcDispatcher,Action`1)
+  method Void Dispose()
+type QscDspDevices.Connectivity.Redundancy.RedundantConnectionPair
+  ctor (String,ConnectionManager,CommandQueue,ChangeGroupManager,ConnectionManager,CommandQueue,ChangeGroupManager,RoutingCommandQueue,AudioControlServiceFanout,SwitchbackPolicy,IConnectionTransport)
+  event EventHandler`1 BackupDeviceConnectionChanged
+  event EventHandler`1 RedundancyStateChanged
+  method Void Connect()
+  method Void Disconnect()
+  method Void Dispose()
+  property Boolean BackupDeviceActive { get; }
+  property Boolean BackupDeviceOnline { get; }
+  property Boolean PrimaryDeviceActive { get; }
+  property ConnectionManager Backup { get; }
+  property ConnectionManager Primary { get; }
+  property Nullable`1 ActiveSlot { get; }
+type QscDspDevices.Connectivity.Redundancy.RoutingCommandQueue
+  ctor (String)
+  method Boolean TryEnqueue(JsonRpcRequest)
+  method Void SetActive(CommandQueue)
+type QscDspDevices.Connectivity.Redundancy.SwitchbackPolicy
+  ctor (Boolean)
+  method Boolean Equals(Object)
+  method Boolean Equals(SwitchbackPolicy)
+  method Int32 GetHashCode()
+  method Nullable`1 PickActive(Nullable`1,EngineState,EngineState)
+  method String ToString()
+  method SwitchbackPolicy <Clone>$()
+  method Void Deconstruct(Boolean&)
+  property Boolean RespectQscFailoverGuidance { get; set; }
+  property SwitchbackPolicy Default { get; }
+  property SwitchbackPolicy QscRecommended { get; }
+type QscDspDevices.LogicTriggers.LogicTriggerRegistry
+  ctor (String)
+  method Boolean IsTriggerTag(String)
+  method Boolean TryGet(String,String&)
+  method Boolean TryGetIdByTag(String,String&)
+  method IReadOnlyList`1 GetAll()
+  method Void Register(String,String)
+type QscDspDevices.LogicTriggers.LogicTriggerService
+  ctor (String,LogicTriggerRegistry,CommandQueue,IdGenerator)
+  event EventHandler`1 LogicTriggerStateChanged
+  method Void OnDeviceUpdate(ChangeGroupDelta)
+  method Void Pulse(String)
+type QscDspDevices.Plugin.QscDspTcp
+  ctor ()
+  ctor (IQrcClock)
+  event EventHandler`1 AudioInputLevelChanged
+  event EventHandler`1 AudioInputMuteChanged
+  event EventHandler`1 AudioOutputLevelChanged
+  event EventHandler`1 AudioOutputMuteChanged
+  event EventHandler`1 AudioRouteChanged
+  event EventHandler`1 AudioZoneEnableChanged
+  event EventHandler`1 BackupDeviceConnectionChanged
+  event EventHandler`1 DspLogicTriggerStateChanged
+  event EventHandler`1 RedundancyStateChanged
+  method Boolean GetAudioInputMute(String)
+  method Boolean GetAudioOutputMute(String)
+  method Boolean QueryAudioZoneEnable(String,String)
+  method IEnumerable`1 GetAudioInputIds()
+  method IEnumerable`1 GetAudioOutputIds()
+  method IEnumerable`1 GetAudioPresetIds()
+  method Int32 GetAudioInputLevel(String)
+  method Int32 GetAudioOutputLevel(String)
+  method String GetCurrentAudioSource(String)
+  method Void AddAudioZoneEnable(String,String,String)
+  method Void AddDspLogicTrigger(String,String,List`1)
+  method Void AddInputChannel(String,String,String,Int32,Int32,Int32,Int32,List`1)
+  method Void AddOutputChannel(String,String,String,String,Int32,Int32,Int32,Int32,List`1)
+  method Void AddPreset(String,String,Int32)
+  method Void ClearAudioRoute(String)
+  method Void Connect()
+  method Void Disconnect()
+  method Void Dispose()
+  method Void Initialize(String,Int32,String,Int32,String,String)
+  method Void PulseDspLogicTrigger(String)
+  method Void RecallAudioPreset(String)
+  method Void RemoveAudioZoneEnable(String,String)
+  method Void RouteAudio(String,String)
+  method Void SetAudioInputLevel(String,Int32)
+  method Void SetAudioInputMute(String,Boolean)
+  method Void SetAudioOutputLevel(String,Int32)
+  method Void SetAudioOutputMute(String,Boolean)
+  method Void SetAudioZoneEnable(String,String,Boolean)
+  method Void SetBackupDeviceConnection(String,Int32)
+  method Void ToggleAudioZoneEnable(String,String)
+  property Boolean BackupDeviceActive { get; }
+  property Boolean BackupDeviceExists { get; }
+  property Boolean BackupDeviceOnline { get; }
+  property Boolean PrimaryDeviceActive { get; }
+  property ThreadCensus ThreadCensus { get; }
+type QscDspDevices.Plugin.Threading.IQrcClock
+  method Task DelayAsync(TimeSpan,CancellationToken)
+  property DateTime UtcNow { get; }
+type QscDspDevices.Plugin.Threading.SystemClock
+  ctor ()
+  method Task DelayAsync(TimeSpan,CancellationToken)
+  property DateTime UtcNow { get; }
+type QscDspDevices.Plugin.Threading.ThreadCensus
+  ctor (String)
+  field Int32 MaxThreads
+  method IReadOnlyList`1 Snapshot()
+  method ThreadCensusRegistration Register(String)
+  property Int32 AliveCount { get; }
+type QscDspDevices.Plugin.Threading.ThreadCensusRegistration
+  method Boolean Equals(Object)
+  method Boolean Equals(ThreadCensusRegistration)
+  method Int32 GetHashCode()
+  method Void Dispose()
+  property Boolean IsBudgetBreach { get; }
+  property ThreadCensusRegistration Breach { get; }
+type QscDspDevices.Protocol.ChangeGroup.ChangeGroupDelta
+  ctor (String,JToken,JToken,Nullable`1)
+  method Boolean Equals(ChangeGroupDelta)
+  method Boolean Equals(Object)
+  method ChangeGroupDelta <Clone>$()
+  method Int32 GetHashCode()
+  method String ToString()
+  method Void Deconstruct(String&,JToken&,JToken&,Nullable`1&)
+  property JToken StringValue { get; set; }
+  property JToken Value { get; set; }
+  property Nullable`1 Position { get; set; }
+  property String Name { get; set; }
+type QscDspDevices.Protocol.ChangeGroup.ChangeGroupManager
+  ctor (String,IdGenerator)
+  field Double DefaultAutoPollSeconds
+  field Int32 MaxGroupsPerConnection
+  field String PluginGroupId
+  method IReadOnlyList`1 GetSubscribedControls(String)
+  method JsonRpcRequest BuildAddControl(String,String)
+  method JsonRpcRequest BuildAutoPoll(String,Double)
+  method JsonRpcRequest BuildDestroy(String)
+  method Void HandleAutoPollPush(JsonRpcResponse)
+  method Void OnPush(JsonRpcResponse)
+  method Void SetDeltaCallback(Action`1)
+  property Int32 GroupCount { get; }
+type QscDspDevices.Protocol.CommandQueue
+  ctor (String)
+  ctor (String,Int32)
+  field Int32 DefaultCapacity
+  method Boolean TryEnqueue(JsonRpcRequest)
+  method IReadOnlyList`1 SnapshotPending()
+  method ValueTask`1 DequeueAsync(CancellationToken)
+  method Void Dispose()
+  method Void Drain()
+  method Void StartAccepting()
+  property Boolean IsAccepting { get; }
+  property Int32 Capacity { get; }
+  property Int64 DroppedTotal { get; }
+type QscDspDevices.Protocol.FrameTooLargeException
+  ctor ()
+  ctor (Int32,Int64)
+  ctor (String)
+  ctor (String,Exception)
+  property Int32 LimitBytes { get; }
+  property Int64 AccumulatedBytes { get; }
+type QscDspDevices.Protocol.IAutoPollSubscription
+  method Void OnPush(JsonRpcResponse)
+type QscDspDevices.Protocol.IdGenerator
+  ctor ()
+  method Int64 Next()
+type QscDspDevices.Protocol.JsonRpc.JsonRpcError
+  ctor ()
+  property Int32 Code { get; set; }
+  property JToken Data { get; set; }
+  property String Message { get; set; }
+type QscDspDevices.Protocol.JsonRpc.JsonRpcRequest
+  ctor ()
+  property Int64 Id { get; set; }
+  property Object Params { get; set; }
+  property String JsonRpc { get; set; }
+  property String Method { get; set; }
+type QscDspDevices.Protocol.JsonRpc.JsonRpcResponse
+  ctor ()
+  property Boolean IsError { get; }
+  property Boolean IsNotification { get; }
+  property JToken Params { get; set; }
+  property JToken Result { get; set; }
+  property JsonRpcError Error { get; set; }
+  property Nullable`1 Id { get; set; }
+  property String JsonRpc { get; set; }
+  property String Method { get; set; }
+type QscDspDevices.Protocol.JsonRpcDispatcher
+  ctor (String)
+  event EventHandler`1 NotificationReceived
+  method Boolean UnregisterAutoPoll(Int64)
+  method Int32 ClearAutoPolls()
+  method Task`1 RegisterPending(Int64,CancellationToken)
+  method Void CancelAllPending(String)
+  method Void Dispatch(String)
+  method Void RegisterAutoPoll(Int64,IAutoPollSubscription)
+type QscDspDevices.Protocol.KeepaliveTimer
+  ctor (IQrcClock,IdGenerator,Func`2,Nullable`1)
+  field TimeSpan DefaultInterval
+  method ValueTask TickAsync(CancellationToken)
+  method Void NotifyOutboundSent()
+  property TimeSpan Interval { get; }
+type QscDspDevices.Protocol.Logging.RedactingDebugFormatter
+  field String Redaction
+  method String Format(JsonRpcRequest)
+type QscDspDevices.Protocol.QrcErrorClassifier
+  method QrcErrorCode Classify(Int32,Boolean&)
+type QscDspDevices.Protocol.QrcErrorCode
+  field Int32 value__
+  field QrcErrorCode ChangeGroupsExhausted
+  field QrcErrorCode CoreOnStandby
+  field QrcErrorCode IllegalMixerChannelIndex
+  field QrcErrorCode InvalidParams
+  field QrcErrorCode InvalidRequest
+  field QrcErrorCode LogonRequired
+  field QrcErrorCode MethodNotFound
+  field QrcErrorCode None
+  field QrcErrorCode ParseError
+  field QrcErrorCode ServerError
+  field QrcErrorCode UnknownChangeGroup
+  field QrcErrorCode UnknownComponentName
+  field QrcErrorCode UnknownControl
+type QscDspDevices.Protocol.QrcFramer
+  ctor ()
+  ctor (Int32,Int32)
+  field Byte FrameTerminator
+  field Int32 DefaultInitialCapacity
+  field Int32 DefaultMaxFrameBytes
+  method Byte[] Encode(String)
+  method IEnumerable`1 Append(ReadOnlySpan`1)
+  property Int32 MaxFrameBytes { get; }
+  property Int32 PendingBytes { get; }
+type QscDspDevices.Transport.BasicTcpClientTransport
+  ctor (String,Int32,Int32)
+  event EventHandler`1 Connected
+  event EventHandler`1 ConnectionFailed
+  event EventHandler`1 RxReceived
+  method Void Connect()
+  method Void Disconnect()
+  method Void Dispose()
+  method Void Send(Byte[])
+  property Boolean IsConnected { get; }
+type QscDspDevices.Transport.IConnectionTransport
+  event EventHandler`1 Connected
+  event EventHandler`1 ConnectionFailed
+  event EventHandler`1 RxReceived
+  method Void Connect()
+  method Void Disconnect()
+  method Void Send(Byte[])
+  property Boolean IsConnected { get; }

@@ -61,11 +61,12 @@ The plugin SHALL define `QrcErrorCode` enumerating the standard JSON-RPC error c
 
 ### Requirement: Logon payload is redacted in debug logs
 
-The framer's debug-log path SHALL detect outbound `Logon` requests and replace any `Password` (or `Pin`, etc.) field value with `***REDACTED***` before emitting `Logger.Debug`. The on-the-wire bytes are unchanged; only the log entry is redacted.
+When the plugin emits a `Logger.Debug` log of an outbound `Logon` JSON-RPC request — whether from `LogonAction`, the `CommandQueue` send-loop, or the `JsonRpcDispatcher` outbound path — the `password` field of the request's `params` block MUST be replaced with the literal string `"***"` before the message is formatted. The on-wire payload MUST NOT be modified; only the logged representation is altered.
 
-#### Scenario: Debug log contains redacted password
+#### Scenario: Logon debug log shows redacted password
 
-- **GIVEN** logging is at Debug level and an outbound Logon request with Password "secret123"
-- **WHEN** the framer logs the outbound frame
-- **THEN** the log entry contains `***REDACTED***` and does not contain `secret123`
+- **GIVEN** debug logging is enabled and `LogonAction` runs with `password = "hunter2"`
+- **WHEN** the outbound `Logon` request is formatted for `Logger.Debug`
+- **THEN** the logged JSON contains `"password":"***"`
+- **AND** the bytes written to the transport contain `"password":"hunter2"`
 

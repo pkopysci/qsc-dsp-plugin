@@ -2,7 +2,7 @@
 
 ## MODIFIED Requirements
 
-### Requirement: At most three concurrent plugin-owned threads per connection
+### Requirement: At most three plugin-owned threads alive simultaneously
 
 The plugin SHALL hold at most three concurrent plugin-owned threadpool tasks per `ConnectionManager`, as required by README §4 ("Internal thread count must be limitted to a maximum of 3 concurrent threads"). Each task SHALL register with `ThreadCensus` on entry and unregister on exit so the runtime guard can detect a breach. The registered roles are:
 

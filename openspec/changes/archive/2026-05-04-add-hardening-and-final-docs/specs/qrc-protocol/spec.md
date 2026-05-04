@@ -1,6 +1,6 @@
 # QRC Protocol — Spec Delta (M7)
 
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Logon payload is redacted in debug logs
 

@@ -1,6 +1,6 @@
 # Project Foundation — Spec Delta (M7)
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Quality gates enforced in CI
 
@@ -18,8 +18,6 @@ The CI workflow SHALL fail the build when any of the following gates is violated
 - **GIVEN** a PR whose merged Cobertura line coverage is 90.9 %
 - **WHEN** the coverage gate runs in CI
 - **THEN** the workflow fails with a message naming the threshold
-
-## ADDED Requirements
 
 ### Requirement: Public API surface is snapshot-locked
 

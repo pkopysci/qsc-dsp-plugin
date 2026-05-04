@@ -243,9 +243,25 @@ internal sealed class EcpConnectionManager : IDisposable
                         continue;
                     }
 
-                    TransitionTo(ConnectionState.Connected, "transport reported Connected");
-                    _queue.StartAccepting();
                     StartIoLoops(cancellationToken);
+
+                    // ECP §2: the Core may send `login_required` immediately
+                    // on accept or in reply to the first command. We give it
+                    // 500ms to surface the banner; absence is treated as
+                    // anonymous-mode and we proceed straight to Accepting.
+                    bool authed = await TryAuthenticateAsync(cancellationToken).ConfigureAwait(false);
+                    if (!authed)
+                    {
+                        // login_failed already logged at Error; tear down and
+                        // let the M2 reconnect cycle take over.
+                        Log.Error(_deviceId, "ECP authentication failed; reconnecting after the standard interval.");
+                        CleanupAfterDisconnect();
+                        await DelayBeforeReconnectAsync(cancellationToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    TransitionTo(ConnectionState.Connected, "transport up + auth complete");
+                    _queue.StartAccepting();
 
                     await WaitForFaultOrDisconnectAsync(cancellationToken).ConfigureAwait(false);
                 }
@@ -302,6 +318,72 @@ internal sealed class EcpConnectionManager : IDisposable
         {
             _transport.Connected -= onConnected;
             _transport.ConnectionFailed -= onFailed;
+        }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Auth handler runs on the receive callback path; per README §\"Exception Handling\" the plugin must not crash the host on a transport / framer fault while sending the login command. Log Error and let the reconnect cycle take over.")]
+    private async Task<bool> TryAuthenticateAsync(CancellationToken cancellationToken)
+    {
+        // Subscribe to the dispatcher with a TCS that completes when we
+        // see one of: login_required (we send the login), login_success
+        // (auth done), or login_failed (auth failed). Anonymous-mode
+        // Cores never send a banner; in that case we time out the
+        // 500ms wait and proceed.
+        var outcome = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        EventHandler<gcu_common_utils.GenericEventArgs.GenericSingleEventArgs<EcpResponse>> handler = (_, args) =>
+        {
+            switch (args.Arg.Kind)
+            {
+                case EcpResponseKind.LoginRequired:
+                    EcpCredentials? creds = _credentialsSource();
+                    if (creds is null)
+                    {
+                        Log.Error(_deviceId, "ECP Core sent login_required but no credentials configured.");
+                        outcome.TrySetResult(false);
+                        return;
+                    }
+
+                    try
+                    {
+                        _transport.Send(EcpFramer.Encode(EcpCommand.Login(creds.Username, creds.Pin)));
+                        _lastOutboundUtc = DateTime.UtcNow;
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(_deviceId, $"ECP login send threw {ex.GetType().Name}: {ex.Message}.");
+                        outcome.TrySetResult(false);
+                    }
+
+                    break;
+                case EcpResponseKind.LoginSuccess:
+                    outcome.TrySetResult(true);
+                    break;
+                case EcpResponseKind.LoginFailed:
+                    Log.Error(_deviceId, "ECP login_failed; Core will close the socket.");
+                    outcome.TrySetResult(false);
+                    break;
+            }
+        };
+
+        _dispatcher.ResponseReceived += handler;
+        try
+        {
+            // Race the auth outcome against a 500ms anonymous-mode
+            // window. If neither arrives, treat the connection as
+            // anonymous and proceed.
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+            using (linkedCts.Token.Register(() => outcome.TrySetResult(true)))
+            {
+                return await outcome.Task.ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _dispatcher.ResponseReceived -= handler;
         }
     }
 

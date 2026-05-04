@@ -136,13 +136,13 @@ internal sealed class EcpCommandQueue : IDisposable
         {
             if (_disposed)
             {
-                Log.Error(_deviceId, $"ECP command attempted on disposed queue: '{Truncate(command)}'");
+                Log.Error(_deviceId, $"ECP command attempted on disposed queue: {Truncate(command)}");
                 return false;
             }
 
             if (!_accepting)
             {
-                Log.Error(_deviceId, $"ECP command attempted while disconnected: '{Truncate(command)}'");
+                Log.Error(_deviceId, $"ECP command attempted while disconnected: {Truncate(command)}");
                 return false;
             }
 
@@ -153,11 +153,11 @@ internal sealed class EcpCommandQueue : IDisposable
 
             if (_channel.Reader.TryRead(out _) && _channel.Writer.TryWrite(command))
             {
-                Log.Warn(_deviceId, $"ECP queue saturated; oldest command dropped to make room for '{Truncate(command)}'.");
+                Log.Warn(_deviceId, $"ECP queue saturated; oldest command dropped to make room for {Truncate(command)}.");
                 return true;
             }
 
-            Log.Warn(_deviceId, $"ECP queue saturated and unable to enqueue '{Truncate(command)}'.");
+            Log.Warn(_deviceId, $"ECP queue saturated and unable to enqueue {Truncate(command)}.");
             return false;
         }
     }
@@ -198,5 +198,23 @@ internal sealed class EcpCommandQueue : IDisposable
         _channel.Writer.TryComplete();
     }
 
-    private static string Truncate(string s) => s.Length <= 100 ? s : s[..100] + "...";
+    /// <summary>
+    /// Returns a log-safe summary of an ECP command line: just the verb
+    /// (the first whitespace-delimited token) and the total length.
+    /// Args may include credentials (Login PIN, password-style values
+    /// in css) and MUST NOT appear in any log call site.
+    /// </summary>
+    /// <param name="command">The wire text.</param>
+    /// <returns>"verb={verb}, len={length}" — safe to log at any level.</returns>
+    private static string Truncate(string command)
+    {
+        if (string.IsNullOrEmpty(command))
+        {
+            return "verb=<empty>, len=0";
+        }
+
+        int spaceIndex = command.IndexOf(' ', StringComparison.Ordinal);
+        string verb = spaceIndex < 0 ? command : command[..spaceIndex];
+        return $"verb={verb}, len={command.Length}";
+    }
 }

@@ -45,11 +45,17 @@ internal sealed class EcpAudioControlService
         _queue = queue;
     }
 
-    /// <summary>Raised on level changes.</summary>
-    public event EventHandler<GenericDualEventArgs<string, string>>? AudioLevelChanged;
+    /// <summary>Raised on input-channel level changes.</summary>
+    public event EventHandler<GenericDualEventArgs<string, string>>? AudioInputLevelChanged;
 
-    /// <summary>Raised on mute changes.</summary>
-    public event EventHandler<GenericDualEventArgs<string, string>>? AudioMuteChanged;
+    /// <summary>Raised on input-channel mute changes.</summary>
+    public event EventHandler<GenericDualEventArgs<string, string>>? AudioInputMuteChanged;
+
+    /// <summary>Raised on output-channel level changes.</summary>
+    public event EventHandler<GenericDualEventArgs<string, string>>? AudioOutputLevelChanged;
+
+    /// <summary>Raised on output-channel mute changes.</summary>
+    public event EventHandler<GenericDualEventArgs<string, string>>? AudioOutputMuteChanged;
 
     /// <summary>Sets the level on the named control via <c>csv</c>.</summary>
     /// <param name="channelId">The framework channel id.</param>
@@ -73,7 +79,15 @@ internal sealed class EcpAudioControlService
         }
 
         _levelCache[channelId] = clamped;
-        AudioLevelChanged?.Invoke(this, new GenericDualEventArgs<string, string>(channelId, clamped.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        var args = new GenericDualEventArgs<string, string>(channelId, clamped.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (channel.IsInput)
+        {
+            AudioInputLevelChanged?.Invoke(this, args);
+        }
+        else
+        {
+            AudioOutputLevelChanged?.Invoke(this, args);
+        }
     }
 
     /// <summary>Sets mute on the named control via <c>css</c>.</summary>
@@ -96,7 +110,15 @@ internal sealed class EcpAudioControlService
         }
 
         _muteCache[channelId] = mute;
-        AudioMuteChanged?.Invoke(this, new GenericDualEventArgs<string, string>(channelId, mute ? "true" : "false"));
+        var args = new GenericDualEventArgs<string, string>(channelId, mute ? "true" : "false");
+        if (channel.IsInput)
+        {
+            AudioInputMuteChanged?.Invoke(this, args);
+        }
+        else
+        {
+            AudioOutputMuteChanged?.Invoke(this, args);
+        }
     }
 
     /// <summary>Returns the cached level for a channel id (0 if unknown).</summary>

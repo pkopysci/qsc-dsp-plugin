@@ -784,16 +784,10 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         var zones = new QscDspDevices.AudioControl.Ecp.EcpAudioZoneEnableService(hostId, _zoneRegistry, queue);
         var triggers = new QscDspDevices.LogicTriggers.Ecp.EcpLogicTriggerService(hostId, _triggerRegistry, queue);
 
-        audio.AudioLevelChanged += (_, args) =>
-        {
-            AudioOutputLevelChanged?.Invoke(this, args);
-            AudioInputLevelChanged?.Invoke(this, args);
-        };
-        audio.AudioMuteChanged += (_, args) =>
-        {
-            AudioOutputMuteChanged?.Invoke(this, args);
-            AudioInputMuteChanged?.Invoke(this, args);
-        };
+        audio.AudioInputLevelChanged += (_, args) => AudioInputLevelChanged?.Invoke(this, args);
+        audio.AudioInputMuteChanged += (_, args) => AudioInputMuteChanged?.Invoke(this, args);
+        audio.AudioOutputLevelChanged += (_, args) => AudioOutputLevelChanged?.Invoke(this, args);
+        audio.AudioOutputMuteChanged += (_, args) => AudioOutputMuteChanged?.Invoke(this, args);
         routing.RouteChanged += (_, args) => AudioRouteChanged?.Invoke(this, args);
         zones.ZoneEnableChanged += (_, args) => AudioZoneEnableChanged?.Invoke(this, args);
 

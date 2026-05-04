@@ -38,6 +38,7 @@
     <InternalsVisibleTo Include="QscDspDevices.PropertyTests" />
   </ItemGroup>
 
+
   <ItemGroup>
     <!--
       During development we compile against the FrameworkStubs project, which

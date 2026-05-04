@@ -319,6 +319,11 @@ public sealed class RedundantConnectionPair : IDisposable
     private void OnPrimaryStateChanged(object? sender, GenericSingleEventArgs<ConnectionState> args)
     {
         ConnectionState newState = args.Arg;
+        if (newState == ConnectionState.Disconnecting)
+        {
+            DisconnectCleanup.TryEnqueueDestroy(_deviceId, _primaryGroupManager, _primaryQueue, transport: null);
+        }
+
         lock (_stateLock)
         {
             _primaryConnectionState = newState;
@@ -354,6 +359,11 @@ public sealed class RedundantConnectionPair : IDisposable
     private void OnBackupStateChanged(object? sender, GenericSingleEventArgs<ConnectionState> args)
     {
         ConnectionState newState = args.Arg;
+        if (newState == ConnectionState.Disconnecting)
+        {
+            DisconnectCleanup.TryEnqueueDestroy(_deviceId, _backupGroupManager, _backupQueue, transport: null);
+        }
+
         bool fire;
         lock (_stateLock)
         {

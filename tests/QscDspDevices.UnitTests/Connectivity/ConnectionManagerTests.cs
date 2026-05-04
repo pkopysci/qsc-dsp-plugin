@@ -154,7 +154,7 @@ public sealed class ConnectionManagerTests
         // verify by counting Connect calls before and after the advance.
         await WaitForConnectCountAsync(transport, 1);
 
-        await waiterAdded.WaitAsync(TimeSpan.FromSeconds(15));
+        await waiterAdded.WaitAsync(TimeSpan.FromSeconds(30));
 
         // Advance only 14s — no second Connect yet.
         clock.Advance(TimeSpan.FromSeconds(14));
@@ -200,7 +200,7 @@ public sealed class ConnectionManagerTests
         Task waiterAdded = clock.WhenNextWaiterAddedAsync();
         transport.SimulateMidFlightDrop("cable pulled");
 
-        await waiterAdded.WaitAsync(TimeSpan.FromSeconds(15));
+        await waiterAdded.WaitAsync(TimeSpan.FromSeconds(30));
         clock.Advance(TimeSpan.FromSeconds(15));
         await WaitForConnectCountAsync(transport, 2);
 

@@ -33,6 +33,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="QscDspDevices.UnitTests" />
+    <InternalsVisibleTo Include="QscDspDevices.IntegrationTests" />
+    <InternalsVisibleTo Include="QscDspDevices.PropertyTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!--
       During development we compile against the FrameworkStubs project, which
       mirrors the real `gcu-common-utils`, `gcu-hardware-service`, and

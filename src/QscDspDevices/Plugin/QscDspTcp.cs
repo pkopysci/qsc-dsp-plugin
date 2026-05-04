@@ -15,6 +15,7 @@ using QscDspDevices.LogicTriggers;
 using QscDspDevices.Plugin.Threading;
 using QscDspDevices.Protocol;
 using QscDspDevices.Protocol.ChangeGroup;
+using QscDspDevices.Protocol.JsonRpc;
 using QscDspDevices.Transport;
 
 namespace QscDspDevices.Plugin;
@@ -684,8 +685,21 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
                 NotifyOnlineStatus();
                 break;
 
-            case ConnectionState.Disconnected:
             case ConnectionState.Disconnecting:
+                IsOnline = false;
+                NotifyOnlineStatus();
+
+                // Best-effort ChangeGroup.Destroy on graceful disconnect.
+                // Single-Core path; redundant deployments hook the
+                // equivalent on each side inside RedundantConnectionPair.
+                if (_redundantPair is null)
+                {
+                    DisconnectCleanup.TryEnqueueDestroy(Id, _primaryGroupManager, _queue, _transport);
+                }
+
+                break;
+
+            case ConnectionState.Disconnected:
                 IsOnline = false;
                 NotifyOnlineStatus();
                 break;

@@ -19,12 +19,12 @@ public class SwitchbackPolicyProperties
     /// PickActive is total: it never throws on any valid input, for
     /// either policy variant.
     /// </summary>
-    /// <param name="currentIsNull">If true, currentActive is null; else picked from primary/backup.</param>
-    /// <param name="currentIsBackup">When currentIsNull is false, picks Backup; else Primary.</param>
-    /// <param name="primaryRaw">Raw int folded into a valid EngineState.</param>
-    /// <param name="backupRaw">Raw int folded into a valid EngineState.</param>
-    /// <param name="qscRecommended">Switchback variant.</param>
-    /// <returns>True (any non-throwing return is a pass).</returns>
+    /// <param name="currentIsNull">Picks the null shape of <c>currentActive</c>.</param>
+    /// <param name="currentIsBackup">Picks Backup vs Primary when current is non-null.</param>
+    /// <param name="primaryRaw">FsCheck-supplied int folded into the primary slot's <see cref="EngineState"/>.</param>
+    /// <param name="backupRaw">FsCheck-supplied int folded into the backup slot's <see cref="EngineState"/>.</param>
+    /// <param name="qscRecommended">Picks the policy variant under test.</param>
+    /// <returns>Always true — the assertion is "did not throw".</returns>
     [Property]
     public bool PickActive_is_total(bool currentIsNull, bool currentIsBackup, int primaryRaw, int backupRaw, bool qscRecommended)
     {
@@ -43,12 +43,12 @@ public class SwitchbackPolicyProperties
     /// PickActive is idempotent: calling it twice with the same args
     /// returns the same result. Guards against accidental hidden state.
     /// </summary>
-    /// <param name="currentIsNull">If true, currentActive is null; else picked from primary/backup.</param>
-    /// <param name="currentIsBackup">When currentIsNull is false, picks Backup; else Primary.</param>
-    /// <param name="primaryRaw">Raw int folded into a valid EngineState.</param>
-    /// <param name="backupRaw">Raw int folded into a valid EngineState.</param>
-    /// <param name="qscRecommended">Switchback variant.</param>
-    /// <returns>True if both calls return the same slot.</returns>
+    /// <param name="currentIsNull">Drives whether <c>currentActive</c> is null or non-null.</param>
+    /// <param name="currentIsBackup">Drives Backup vs Primary selection for the non-null case.</param>
+    /// <param name="primaryRaw">Folded by <c>ToEngineState</c> for the primary slot.</param>
+    /// <param name="backupRaw">Folded by <c>ToEngineState</c> for the backup slot.</param>
+    /// <param name="qscRecommended">Selects between the README and QSC-recommended switchback variants.</param>
+    /// <returns>True iff both calls return the same slot.</returns>
     [Property]
     public bool PickActive_is_idempotent(bool currentIsNull, bool currentIsBackup, int primaryRaw, int backupRaw, bool qscRecommended)
     {
@@ -69,12 +69,12 @@ public class SwitchbackPolicyProperties
     /// must be Active. (Negative invariant: never promote a non-Active
     /// slot.)
     /// </summary>
-    /// <param name="currentIsNull">If true, currentActive is null; else picked from primary/backup.</param>
-    /// <param name="currentIsBackup">When currentIsNull is false, picks Backup; else Primary.</param>
-    /// <param name="primaryRaw">Raw int folded into a valid EngineState.</param>
-    /// <param name="backupRaw">Raw int folded into a valid EngineState.</param>
-    /// <param name="qscRecommended">Switchback variant.</param>
-    /// <returns>True if the chosen slot's state is Active, or null was returned.</returns>
+    /// <param name="currentIsNull">Drives the null vs non-null shape of the <c>currentActive</c> argument.</param>
+    /// <param name="currentIsBackup">Disambiguates Backup vs Primary when <c>currentActive</c> is non-null.</param>
+    /// <param name="primaryRaw">Random int mapped to the primary slot's <see cref="EngineState"/>.</param>
+    /// <param name="backupRaw">Random int mapped to the backup slot's <see cref="EngineState"/>.</param>
+    /// <param name="qscRecommended">Selects the switchback variant to exercise.</param>
+    /// <returns>True iff the returned slot has Active state, or null was returned.</returns>
     [Property]
     public bool PickActive_only_returns_an_Active_slot(bool currentIsNull, bool currentIsBackup, int primaryRaw, int backupRaw, bool qscRecommended)
     {

@@ -68,4 +68,21 @@ public sealed class DisconnectCleanupTests
         Action act1 = () => DisconnectCleanup.TryEnqueueDestroy("dsp-1", null, null, null);
         act1.Should().NotThrow();
     }
+
+    [Fact]
+    public void TryEnqueueDestroy_logs_warn_when_queue_refuses_enqueue()
+    {
+        const string deviceId = "dsp-1";
+
+        // Don't call StartAccepting → TryEnqueue refuses and returns false.
+        using var queue = new CommandQueue(deviceId);
+        var manager = new ChangeGroupManager(deviceId, new IdGenerator());
+        manager.BuildAddControl(ChangeGroupManager.PluginGroupId, "Input.1.gain");
+
+        using var sink = new TestSupport.Logging.TestLoggerSink();
+
+        DisconnectCleanup.TryEnqueueDestroy(deviceId, manager, queue, transport: null);
+
+        sink.ContainsWarnMatching("ChangeGroup.Destroy enqueue refused").Should().BeTrue();
+    }
 }

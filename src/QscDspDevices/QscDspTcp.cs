@@ -12,13 +12,14 @@ using QscDspDevices.Connectivity;
 using QscDspDevices.Connectivity.PostConnect;
 using QscDspDevices.Connectivity.Redundancy;
 using QscDspDevices.LogicTriggers;
+using QscDspDevices.Plugin;
 using QscDspDevices.Plugin.Threading;
 using QscDspDevices.Protocol;
 using QscDspDevices.Protocol.ChangeGroup;
 using QscDspDevices.Protocol.JsonRpc;
 using QscDspDevices.Transport;
 
-namespace QscDspDevices.Plugin;
+namespace QscDspDevices;
 
 /// <summary>
 /// The plugin's root public class — the one the AV Framework instantiates

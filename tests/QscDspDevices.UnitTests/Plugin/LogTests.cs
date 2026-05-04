@@ -63,7 +63,7 @@ public sealed class LogTests
 
     private static void InvokeLog(string method, string deviceId, string message)
     {
-        Type? logType = typeof(QscDspDevices.Plugin.QscDspTcp).Assembly
+        Type? logType = typeof(QscDspDevices.QscDspTcp).Assembly
             .GetType("QscDspDevices.Plugin.Log");
         logType.Should().NotBeNull("Log type must exist in the QscDspDevices assembly");
         MethodInfo? mi = logType!.GetMethod(method, BindingFlags.Public | BindingFlags.Static);

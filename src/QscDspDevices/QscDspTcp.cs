@@ -737,7 +737,8 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
             _routingQueue,
             _fanout,
             SwitchbackPolicy.Default,
-            backup.Transport);
+            backup.Transport,
+            _transport);
 
         // Forward the pair's events to the QscDspTcp surface.
         pair.RedundancyStateChanged += (_, args) => RedundancyStateChanged?.Invoke(this, args);

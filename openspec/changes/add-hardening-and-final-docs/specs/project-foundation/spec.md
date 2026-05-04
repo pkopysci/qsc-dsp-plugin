@@ -23,10 +23,10 @@ The CI workflow SHALL fail the build when any of the following gates is violated
 
 ### Requirement: Public API surface is snapshot-locked
 
-The build SHALL include a snapshot of the public API surface of `QscDspDevices.dll`. Any change to a `public` symbol — addition, removal, signature change — MUST be reflected by a diff in either `PublicAPI.Shipped.txt` (for shipped surface) or `PublicAPI.Unshipped.txt` (for additions in flight). A PR that changes the public surface without updating these files MUST fail the build via `Microsoft.CodeAnalysis.PublicApiAnalyzers` (RS0016/RS0017) or an equivalent analyzer.
+The repository SHALL include a snapshot of the public API surface of `QscDspDevices.dll` at `tests/QscDspDevices.UnitTests/PublicSurface.expected.txt`. Any change to a `public` symbol — addition, removal, signature change — MUST be reflected by a diff in that snapshot file in the same commit. A PR that changes the public surface without updating the snapshot MUST fail the test gate `PublicSurfaceTests.Public_surface_matches_expected_snapshot` (xunit, runs in the unit-test project under `dotnet test`).
 
 #### Scenario: PR adds a public method without updating the snapshot
 
 - **GIVEN** a PR that adds `public void DoNewThing()` to a class in `QscDspDevices.dll`
-- **WHEN** `dotnet build` runs
-- **THEN** the build fails with RS0016 (or equivalent) naming the new symbol
+- **WHEN** `dotnet test` runs
+- **THEN** `PublicSurfaceTests.Public_surface_matches_expected_snapshot` fails with a FluentAssertions diff naming the new symbol and pointing the author to update the expected file

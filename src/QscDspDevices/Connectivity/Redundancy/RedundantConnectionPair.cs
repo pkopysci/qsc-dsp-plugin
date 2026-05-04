@@ -39,6 +39,7 @@ public sealed class RedundantConnectionPair : IDisposable
     private readonly CommandQueue _backupQueue;
     private readonly ChangeGroupManager _primaryGroupManager;
     private readonly ChangeGroupManager _backupGroupManager;
+    private readonly IConnectionTransport? _primaryTransport;
     private readonly IConnectionTransport? _backupTransport;
     private readonly RoutingCommandQueue _routingQueue;
     private readonly AudioControlServiceFanout _fanout;
@@ -68,6 +69,7 @@ public sealed class RedundantConnectionPair : IDisposable
     /// <param name="fanout">The AutoPoll fanout dispatcher (re-subscribed on switchover).</param>
     /// <param name="policy">The switchback policy.</param>
     /// <param name="backupTransport">The backup transport, owned by the pair and disposed on <see cref="Dispose"/>. May be null in tests that own the stub transport themselves.</param>
+    /// <param name="primaryTransport">The primary transport, used only to gate the per-side <c>ChangeGroup.Destroy</c> attempt on graceful disconnect. The lifetime is owned by the caller (typically <see cref="QscDspTcp"/>); the pair does not dispose it.</param>
     /// <exception cref="ArgumentNullException">If any required argument is null.</exception>
     public RedundantConnectionPair(
         string deviceId,
@@ -80,7 +82,8 @@ public sealed class RedundantConnectionPair : IDisposable
         RoutingCommandQueue routingQueue,
         AudioControlServiceFanout fanout,
         SwitchbackPolicy policy,
-        IConnectionTransport? backupTransport = null)
+        IConnectionTransport? backupTransport = null,
+        IConnectionTransport? primaryTransport = null)
     {
         ArgumentNullException.ThrowIfNull(deviceId);
         ArgumentNullException.ThrowIfNull(primary);
@@ -104,6 +107,7 @@ public sealed class RedundantConnectionPair : IDisposable
         _fanout = fanout;
         _policy = policy;
         _backupTransport = backupTransport;
+        _primaryTransport = primaryTransport;
 
         _primaryObserver = new EngineStatusObserver(deviceId, primary.Dispatcher, s => OnEngineState(CoreSlot.Primary, s));
         _backupObserver = new EngineStatusObserver(deviceId, backup.Dispatcher, s => OnEngineState(CoreSlot.Backup, s));
@@ -321,7 +325,7 @@ public sealed class RedundantConnectionPair : IDisposable
         ConnectionState newState = args.Arg;
         if (newState == ConnectionState.Disconnecting)
         {
-            DisconnectCleanup.TryEnqueueDestroy(_deviceId, _primaryGroupManager, _primaryQueue, transport: null);
+            DisconnectCleanup.TryEnqueueDestroy(_deviceId, _primaryGroupManager, _primaryQueue, _primaryTransport);
         }
 
         lock (_stateLock)
@@ -361,7 +365,7 @@ public sealed class RedundantConnectionPair : IDisposable
         ConnectionState newState = args.Arg;
         if (newState == ConnectionState.Disconnecting)
         {
-            DisconnectCleanup.TryEnqueueDestroy(_deviceId, _backupGroupManager, _backupQueue, transport: null);
+            DisconnectCleanup.TryEnqueueDestroy(_deviceId, _backupGroupManager, _backupQueue, _backupTransport);
         }
 
         bool fire;

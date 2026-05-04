@@ -150,6 +150,7 @@ public sealed class RedundancyEndToEndTests
     public async Task Writes_during_double_Standby_window_are_refused()
     {
         using var env = new RedundancyEnv();
+        using var sink = new TestSupport.Logging.TestLoggerSink();
         env.Pair.Connect();
         await WaitForAsync(
             () => env.Pair.Primary.State == ConnectionState.Connected
@@ -174,14 +175,16 @@ public sealed class RedundancyEndToEndTests
         env.Pair.BackupDeviceActive.Should().BeFalse();
         env.Pair.ActiveSlot.Should().BeNull();
 
-        // RoutingCommandQueue.TryEnqueue refuses with no active inner queue.
-        // Logger.Error assertion is deferred to M7 §6.5 LogCapture helper.
+        // RoutingCommandQueue.TryEnqueue refuses with no active inner queue
+        // and emits Logger.Error per RoutingCommandQueue.TryEnqueue.
         env.RoutingQueue.TryEnqueue(new global::QscDspDevices.Protocol.JsonRpc.JsonRpcRequest
         {
             Id = 500,
             Method = "Control.Set",
             Params = new { Name = "test.tag", Value = 5 },
         }).Should().BeFalse();
+
+        sink.ContainsErrorMatching("no active Core").Should().BeTrue();
     }
 
     private static bool Saw(FakeQrcServer server, string method, long id)

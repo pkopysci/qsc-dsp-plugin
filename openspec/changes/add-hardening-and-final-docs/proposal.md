@@ -39,7 +39,7 @@ This is not a feature milestone. No new public surface. No new protocol path (EC
    - `CHANGELOG.md` — first cut spanning M1–M7.
 
 7. **Quality gates.**
-   - Coverage gate raised 90 % → 92 % (current: 91 %; M7 closes the gap).
+   - Coverage gate raised 90 % → 91 % (M7 baseline; aspirational 92 % deferred to M-ECP per `design.md` §D-T5 once the surface-reduction work happens).
    - DLL size budget re-asserted ≤ 500 KB.
    - `dotnet build -warnaserror` and `dotnet format --verify-no-changes` clean.
    - `qsc-critic` Pass 1 + 2 documented in `REVIEW.md`.

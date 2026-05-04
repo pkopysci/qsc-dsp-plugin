@@ -24,6 +24,8 @@ namespace QscDspDevices.UnitTests.Connectivity;
 /// </summary>
 public sealed class ConnectionManagerTests
 {
+    private static readonly string[] ExpectedRoles = { "session", "send", "keepalive" };
+
     [Fact]
     public async Task Connect_drives_state_through_Connecting_to_Connected()
     {
@@ -51,6 +53,42 @@ public sealed class ConnectionManagerTests
 
         observed.Should().ContainInOrder(ConnectionState.Connecting, ConnectionState.Connected);
         queue.IsAccepting.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Connected_steady_state_registers_three_threadcensus_roles()
+    {
+        // Pins README §4 + spec threading-budget: ≤ 3 concurrent
+        // plugin-owned tasks. Roles are session, send, keepalive.
+        // Keepalive only starts when both clock + ids are supplied,
+        // so we pass them here.
+        using var transport = new StubTransport();
+        var clock = new DeterministicClock();
+        var ids = new IdGenerator();
+        using var queue = new CommandQueue("dsp-1");
+        var dispatcher = new JsonRpcDispatcher("dsp-1");
+        using var sut = new ConnectionManager(
+            "dsp-1",
+            transport,
+            new ReconnectStrategy(clock),
+            queue,
+            dispatcher,
+            clock: clock,
+            ids: ids);
+
+        sut.Connect();
+        await WaitForStateAsync(sut, ConnectionState.Connecting);
+        transport.SimulateConnectSuccess();
+        await WaitForStateAsync(sut, ConnectionState.Connected);
+
+        // The send + keepalive loops register lazily on first iteration.
+        // Wait until the census reports the steady-state count.
+        await WaitForAsync(
+            () => sut.ThreadCensus.AliveCount == 3,
+            TimeSpan.FromSeconds(15));
+
+        IReadOnlyList<string> roles = sut.ThreadCensus.Snapshot();
+        roles.Should().BeEquivalentTo(ExpectedRoles);
     }
 
     [Fact]
@@ -266,6 +304,20 @@ public sealed class ConnectionManagerTests
         finally
         {
             manager.StateChanged -= handler;
+        }
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        DateTime deadline = DateTime.UtcNow + timeout;
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException($"Condition not met within {timeout.TotalSeconds:0.##}s.");
+            }
+
+            await Task.Delay(20);
         }
     }
 

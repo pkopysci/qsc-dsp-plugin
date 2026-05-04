@@ -85,6 +85,97 @@ public sealed class RedundancyEndToEndTests
             TimeSpan.FromSeconds(15));
     }
 
+    [Fact]
+    public async Task Switchback_to_primary_when_it_returns_to_Active()
+    {
+        using var env = new RedundancyEnv();
+        env.Pair.Connect();
+        await WaitForAsync(
+            () => env.Pair.Primary.State == ConnectionState.Connected
+                  && env.Pair.Backup.State == ConnectionState.Connected,
+            TimeSpan.FromSeconds(15));
+
+        // FakeQrcServer auto-pushes Active on accept. Wait for both
+        // dispatchers to have settled into Primary-active before we
+        // start driving state, otherwise a late auto-push could
+        // override our synthetic Standby.
+        env.PrimaryDispatcher.Dispatch(
+            """{"jsonrpc":"2.0","method":"EngineStatus","params":{"State":"Active"}}""");
+        env.BackupDispatcher.Dispatch(
+            """{"jsonrpc":"2.0","method":"EngineStatus","params":{"State":"Active"}}""");
+        await WaitForAsync(() => env.Pair.PrimaryDeviceActive, TimeSpan.FromSeconds(2));
+
+        // Primary Standby + Backup Active → backup becomes active.
+        env.BackupDispatcher.Dispatch(
+            """{"jsonrpc":"2.0","method":"EngineStatus","params":{"State":"Active"}}""");
+        env.PrimaryDispatcher.Dispatch(
+            """{"jsonrpc":"2.0","method":"EngineStatus","params":{"State":"Standby"}}""");
+        env.Pair.BackupDeviceActive.Should().BeTrue();
+
+        env.RoutingQueue.TryEnqueue(new global::QscDspDevices.Protocol.JsonRpc.JsonRpcRequest
+        {
+            Id = 300,
+            Method = "Control.Set",
+            Params = new { Name = "test.tag", Value = 3 },
+        }).Should().BeTrue();
+
+        await WaitForAsync(
+            () => Saw(env.BackupServer, "Control.Set", 300),
+            TimeSpan.FromSeconds(15));
+
+        // Primary returns to Active → default policy switches back to primary.
+        env.PrimaryDispatcher.Dispatch(
+            """{"jsonrpc":"2.0","method":"EngineStatus","params":{"State":"Active"}}""");
+        env.Pair.PrimaryDeviceActive.Should().BeTrue();
+
+        env.RoutingQueue.TryEnqueue(new global::QscDspDevices.Protocol.JsonRpc.JsonRpcRequest
+        {
+            Id = 400,
+            Method = "Control.Set",
+            Params = new { Name = "test.tag", Value = 4 },
+        }).Should().BeTrue();
+
+        await WaitForAsync(
+            () => Saw(env.PrimaryServer, "Control.Set", 400),
+            TimeSpan.FromSeconds(15));
+    }
+
+    [Fact]
+    public async Task Writes_during_double_Standby_window_are_refused()
+    {
+        using var env = new RedundancyEnv();
+        env.Pair.Connect();
+        await WaitForAsync(
+            () => env.Pair.Primary.State == ConnectionState.Connected
+                  && env.Pair.Backup.State == ConnectionState.Connected,
+            TimeSpan.FromSeconds(15));
+
+        // Wait for the auto-pushed Active state to settle, then drive
+        // both into Standby. Without the wait, a late auto-push of
+        // Active could override our Standby and the test would race.
+        env.PrimaryDispatcher.Dispatch(
+            """{"jsonrpc":"2.0","method":"EngineStatus","params":{"State":"Active"}}""");
+        await WaitForAsync(() => env.Pair.PrimaryDeviceActive, TimeSpan.FromSeconds(2));
+
+        env.PrimaryDispatcher.Dispatch(
+            """{"jsonrpc":"2.0","method":"EngineStatus","params":{"State":"Standby"}}""");
+        env.BackupDispatcher.Dispatch(
+            """{"jsonrpc":"2.0","method":"EngineStatus","params":{"State":"Standby"}}""");
+
+        env.Pair.PrimaryDeviceActive.Should().BeFalse();
+        env.Pair.BackupDeviceActive.Should().BeFalse();
+        env.Pair.ActiveSlot.Should().BeNull();
+
+        // RoutingCommandQueue.TryEnqueue refuses with no active inner queue.
+        // Logger.Error assertion is deferred to M7 §6.5 LogCapture helper.
+        env.RoutingQueue.TryEnqueue(new global::QscDspDevices.Protocol.JsonRpc.JsonRpcRequest
+        {
+            Id = 500,
+            Method = "Control.Set",
+            Params = new { Name = "test.tag", Value = 5 },
+        }).Should().BeFalse();
+    }
+
     private static bool Saw(FakeQrcServer server, string method, long id)
     {
         foreach (ReceivedFrame frame in server.GetReceivedFrames())

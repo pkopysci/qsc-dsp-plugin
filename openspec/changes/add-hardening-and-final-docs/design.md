@@ -2,7 +2,9 @@
 
 ## D-T1: Threading shape — Task-loops vs Thread-trio
 
-**Problem.** README §4 prescribes "no more than 3 internal threads (per-manager): one for send, one for receive, one for keepalive/timer." M2's `ConnectionManager` instead runs a single `RunSessionAsync` task that drives a state machine and dispatches send/receive/keepalive on the threadpool. M3's critic deferred the divergence to M7 (M3-tasks §4.5 + §4.6).
+**Problem.** The literal README §4 text reads, in full: *"Internal thread count must be limitted to a maximum of 3 concurrent threads. The library must be non-blocking and all threading must be managed internally (no public async/await)."* That is the entire threading constraint. The README does **not** prescribe OS `Thread` instances, named send/recv/timer roles, dedicated lifecycles, or removal of any orchestrator — those were elaborations introduced by the M2 `threading-budget` spec, not literal README requirements.
+
+M2's `ConnectionManager` runs a `RunSessionAsync` orchestrator plus task-loops scheduled on the threadpool for send / receive / keepalive. M3's critic flagged divergence from the *M2-spec interpretation*, deferred to M7. M7 walks back the over-prescriptive M2 interpretation.
 
 **Options.**
 
@@ -12,14 +14,15 @@
 
 3. **Hybrid: dedicated Thread for receive (latency-critical), Task-loops for send + keepalive.** Receive is the only thread where blocking matters for correctness (frame-boundary parsing). Send is bounded-channel-driven, keepalive is timer-driven. Cost: two seams to maintain; mild complexity.
 
-**Decision (M7).** **Option 2 — keep the Task-loop shape, record as deviation D-T1.**
+**Decision (M7).** **Option 2 — keep Task-loop shape; D-T1 is recorded as "M2-spec over-prescribed beyond README §4; M7 walks back."**
 
 **Rationale.**
-- The flake mode that motivates the README rule is *threadpool starvation under heavy GC*. We have not observed that mode in CI or in the local stress runs (see M3 critic Pass 1 follow-up); the M3 + M6 flakes were post-connect-chain races, not threadpool exhaustion.
-- The receive path is event-driven via `BasicTcpClient.RxReceived` + the framer's incremental parse — there is no blocking read loop that benefits from a dedicated `Thread`.
-- Option 1 risks regressing the M2 keepalive cadence test (`KeepaliveTimerTests`) and the M3 cleanup ordering test (`ConnectionManagerTests.Disconnect_drains_in_flight_writes`). The benefit is documentation conformance, not behaviour.
-- Option 3 splits the seam without removing the deviation; we still have to record D-T1 for the send/keepalive halves.
-- The threading-budget spec is amended to describe what we actually do; `ThreadCensus` is wired to register the steady-state loops so the runtime guard reflects the truth.
+- The README's literal threading rule is "≤ 3 concurrent threads." A bounded set of long-running task-loops, plus a `ThreadCensus` that registers them, satisfies that rule directly: at any instant the plugin holds ≤ 3 threadpool threads (send loop active OR keepalive firing OR `RunSessionAsync` waking — receive is event-driven on the `BasicTcpClient` callback and is not plugin-owned).
+- The flake mode that motivates a stricter Thread-trio interpretation is *threadpool starvation under heavy GC*. We have not observed that mode in CI or in the local stress runs (M3 critic Pass-1 follow-up + M6 critic Pass-2 stress); the M3 + M6 flakes were post-connect-chain races, not threadpool exhaustion.
+- The receive path is event-driven via `BasicTcpClient.RxReceived` + the framer's incremental parse. There is no blocking read loop that benefits from a dedicated `Thread`.
+- Option 1 risks regressing `KeepaliveTimerTests` and `ConnectionManagerTests.Disconnect_drains_in_flight_writes`. The benefit is M2-spec conformance, not README conformance, and not behaviour.
+- Option 3 splits the seam without changing the README compliance picture.
+- The `threading-budget` spec is amended to describe what we actually do (≤ 3 concurrent, registered in `ThreadCensus`). The deviation is *from our own over-prescriptive interpretation*, not from the README.
 
 **Reversibility.** One-way door. Future versions could re-introduce a dedicated `Thread` for receive without breaking semver as long as `ThreadCensus` and `IRedundancySupport` semantics stay unchanged.
 

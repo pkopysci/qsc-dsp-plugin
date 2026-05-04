@@ -294,7 +294,7 @@ internal sealed class EcpConnectionManager : IDisposable
 
         try
         {
-            using var registration = cancellationToken.Register(() => connected.TrySetResult(false));
+            using CancellationTokenRegistration registration = cancellationToken.Register(() => connected.TrySetResult(false));
             _transport.Connect();
             return await connected.Task.ConfigureAwait(false) && !cancellationToken.IsCancellationRequested;
         }

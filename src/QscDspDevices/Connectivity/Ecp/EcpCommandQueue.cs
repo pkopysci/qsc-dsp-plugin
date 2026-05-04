@@ -69,7 +69,10 @@ internal sealed class EcpCommandQueue : IDisposable
     }
 
     /// <summary>Gets the configured maximum outstanding-command count.</summary>
-    public int Capacity { get; }
+    public int Capacity
+    {
+        get;
+    }
 
     /// <summary>Gets a value indicating whether the queue currently accepts enqueues.</summary>
     public bool IsAccepting

@@ -68,8 +68,19 @@ public sealed class EngineStatusObserver : IDisposable
 
         // EngineStatus is delivered as a notification — the State is in
         // the `params` block (the dispatcher routes server pushes via
-        // Params, not Result).
-        string? rawState = response.Params?["State"]?.ToString();
+        // Params, not Result). Newtonsoft's JToken.ToString() on a
+        // JSON-null returns the literal string "null", which would
+        // otherwise pass the IsNullOrEmpty check and fall through to
+        // the Unknown-warn branch by coincidence; check the token type
+        // explicitly so the missing-field message is accurate.
+        Newtonsoft.Json.Linq.JToken? stateToken = response.Params?["State"];
+        if (stateToken is null || stateToken.Type == Newtonsoft.Json.Linq.JTokenType.Null)
+        {
+            Log.Warn(_deviceId, "EngineStatus push missing State field; ignoring.");
+            return;
+        }
+
+        string? rawState = stateToken.ToString();
         if (string.IsNullOrEmpty(rawState))
         {
             Log.Warn(_deviceId, "EngineStatus push missing State field; ignoring.");

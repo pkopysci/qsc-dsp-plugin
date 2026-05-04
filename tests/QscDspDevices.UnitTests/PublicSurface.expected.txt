@@ -193,53 +193,6 @@ type QscDspDevices.LogicTriggers.LogicTriggerService
   event EventHandler`1 LogicTriggerStateChanged
   method Void OnDeviceUpdate(ChangeGroupDelta)
   method Void Pulse(String)
-type QscDspDevices.Plugin.QscDspTcp
-  ctor ()
-  ctor (IQrcClock)
-  event EventHandler`1 AudioInputLevelChanged
-  event EventHandler`1 AudioInputMuteChanged
-  event EventHandler`1 AudioOutputLevelChanged
-  event EventHandler`1 AudioOutputMuteChanged
-  event EventHandler`1 AudioRouteChanged
-  event EventHandler`1 AudioZoneEnableChanged
-  event EventHandler`1 BackupDeviceConnectionChanged
-  event EventHandler`1 DspLogicTriggerStateChanged
-  event EventHandler`1 RedundancyStateChanged
-  method Boolean GetAudioInputMute(String)
-  method Boolean GetAudioOutputMute(String)
-  method Boolean QueryAudioZoneEnable(String,String)
-  method IEnumerable`1 GetAudioInputIds()
-  method IEnumerable`1 GetAudioOutputIds()
-  method IEnumerable`1 GetAudioPresetIds()
-  method Int32 GetAudioInputLevel(String)
-  method Int32 GetAudioOutputLevel(String)
-  method String GetCurrentAudioSource(String)
-  method Void AddAudioZoneEnable(String,String,String)
-  method Void AddDspLogicTrigger(String,String,List`1)
-  method Void AddInputChannel(String,String,String,Int32,Int32,Int32,Int32,List`1)
-  method Void AddOutputChannel(String,String,String,String,Int32,Int32,Int32,Int32,List`1)
-  method Void AddPreset(String,String,Int32)
-  method Void ClearAudioRoute(String)
-  method Void Connect()
-  method Void Disconnect()
-  method Void Dispose()
-  method Void Initialize(String,Int32,String,Int32,String,String)
-  method Void PulseDspLogicTrigger(String)
-  method Void RecallAudioPreset(String)
-  method Void RemoveAudioZoneEnable(String,String)
-  method Void RouteAudio(String,String)
-  method Void SetAudioInputLevel(String,Int32)
-  method Void SetAudioInputMute(String,Boolean)
-  method Void SetAudioOutputLevel(String,Int32)
-  method Void SetAudioOutputMute(String,Boolean)
-  method Void SetAudioZoneEnable(String,String,Boolean)
-  method Void SetBackupDeviceConnection(String,Int32)
-  method Void ToggleAudioZoneEnable(String,String)
-  property Boolean BackupDeviceActive { get; }
-  property Boolean BackupDeviceExists { get; }
-  property Boolean BackupDeviceOnline { get; }
-  property Boolean PrimaryDeviceActive { get; }
-  property ThreadCensus ThreadCensus { get; }
 type QscDspDevices.Plugin.Threading.IQrcClock
   method Task DelayAsync(TimeSpan,CancellationToken)
   property DateTime UtcNow { get; }
@@ -376,6 +329,53 @@ type QscDspDevices.Protocol.QrcFramer
   method IEnumerable`1 Append(ReadOnlySpan`1)
   property Int32 MaxFrameBytes { get; }
   property Int32 PendingBytes { get; }
+type QscDspDevices.QscDspTcp
+  ctor ()
+  ctor (IQrcClock)
+  event EventHandler`1 AudioInputLevelChanged
+  event EventHandler`1 AudioInputMuteChanged
+  event EventHandler`1 AudioOutputLevelChanged
+  event EventHandler`1 AudioOutputMuteChanged
+  event EventHandler`1 AudioRouteChanged
+  event EventHandler`1 AudioZoneEnableChanged
+  event EventHandler`1 BackupDeviceConnectionChanged
+  event EventHandler`1 DspLogicTriggerStateChanged
+  event EventHandler`1 RedundancyStateChanged
+  method Boolean GetAudioInputMute(String)
+  method Boolean GetAudioOutputMute(String)
+  method Boolean QueryAudioZoneEnable(String,String)
+  method IEnumerable`1 GetAudioInputIds()
+  method IEnumerable`1 GetAudioOutputIds()
+  method IEnumerable`1 GetAudioPresetIds()
+  method Int32 GetAudioInputLevel(String)
+  method Int32 GetAudioOutputLevel(String)
+  method String GetCurrentAudioSource(String)
+  method Void AddAudioZoneEnable(String,String,String)
+  method Void AddDspLogicTrigger(String,String,List`1)
+  method Void AddInputChannel(String,String,String,Int32,Int32,Int32,Int32,List`1)
+  method Void AddOutputChannel(String,String,String,String,Int32,Int32,Int32,Int32,List`1)
+  method Void AddPreset(String,String,Int32)
+  method Void ClearAudioRoute(String)
+  method Void Connect()
+  method Void Disconnect()
+  method Void Dispose()
+  method Void Initialize(String,Int32,String,Int32,String,String)
+  method Void PulseDspLogicTrigger(String)
+  method Void RecallAudioPreset(String)
+  method Void RemoveAudioZoneEnable(String,String)
+  method Void RouteAudio(String,String)
+  method Void SetAudioInputLevel(String,Int32)
+  method Void SetAudioInputMute(String,Boolean)
+  method Void SetAudioOutputLevel(String,Int32)
+  method Void SetAudioOutputMute(String,Boolean)
+  method Void SetAudioZoneEnable(String,String,Boolean)
+  method Void SetBackupDeviceConnection(String,Int32)
+  method Void ToggleAudioZoneEnable(String,String)
+  property Boolean BackupDeviceActive { get; }
+  property Boolean BackupDeviceExists { get; }
+  property Boolean BackupDeviceOnline { get; }
+  property Boolean PrimaryDeviceActive { get; }
+  property ThreadCensus ThreadCensus { get; }
 type QscDspDevices.Transport.BasicTcpClientTransport
   ctor (String,Int32,Int32)
   event EventHandler`1 Connected

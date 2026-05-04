@@ -5,6 +5,7 @@ using QscDspDevices.AudioControl;
 using QscDspDevices.Plugin;
 using QscDspDevices.Protocol;
 using QscDspDevices.Protocol.ChangeGroup;
+using QscDspDevices.Transport;
 
 namespace QscDspDevices.Connectivity.Redundancy;
 
@@ -38,6 +39,7 @@ public sealed class RedundantConnectionPair : IDisposable
     private readonly CommandQueue _backupQueue;
     private readonly ChangeGroupManager _primaryGroupManager;
     private readonly ChangeGroupManager _backupGroupManager;
+    private readonly IConnectionTransport? _backupTransport;
     private readonly RoutingCommandQueue _routingQueue;
     private readonly AudioControlServiceFanout _fanout;
     private readonly SwitchbackPolicy _policy;
@@ -48,6 +50,7 @@ public sealed class RedundantConnectionPair : IDisposable
     private EngineState _primaryState = EngineState.Unknown;
     private EngineState _backupState = EngineState.Unknown;
     private CoreSlot? _activeSlot;
+    private ConnectionState _primaryConnectionState = ConnectionState.Disconnected;
     private ConnectionState _backupConnectionState = ConnectionState.Disconnected;
     private bool _disposed;
 
@@ -64,6 +67,7 @@ public sealed class RedundantConnectionPair : IDisposable
     /// <param name="routingQueue">The shared routing facade the service tier enqueues to.</param>
     /// <param name="fanout">The AutoPoll fanout dispatcher (re-subscribed on switchover).</param>
     /// <param name="policy">The switchback policy.</param>
+    /// <param name="backupTransport">The backup transport, owned by the pair and disposed on <see cref="Dispose"/>. May be null in tests that own the stub transport themselves.</param>
     /// <exception cref="ArgumentNullException">If any required argument is null.</exception>
     public RedundantConnectionPair(
         string deviceId,
@@ -75,7 +79,8 @@ public sealed class RedundantConnectionPair : IDisposable
         ChangeGroupManager backupGroupManager,
         RoutingCommandQueue routingQueue,
         AudioControlServiceFanout fanout,
-        SwitchbackPolicy policy)
+        SwitchbackPolicy policy,
+        IConnectionTransport? backupTransport = null)
     {
         ArgumentNullException.ThrowIfNull(deviceId);
         ArgumentNullException.ThrowIfNull(primary);
@@ -98,11 +103,16 @@ public sealed class RedundantConnectionPair : IDisposable
         _routingQueue = routingQueue;
         _fanout = fanout;
         _policy = policy;
+        _backupTransport = backupTransport;
 
         _primaryObserver = new EngineStatusObserver(deviceId, primary.Dispatcher, s => OnEngineState(CoreSlot.Primary, s));
         _backupObserver = new EngineStatusObserver(deviceId, backup.Dispatcher, s => OnEngineState(CoreSlot.Backup, s));
 
-        // Track the backup's TCP up/down to fire BackupDeviceConnectionChanged.
+        // Track each side's TCP up/down. The primary handler exists so a
+        // primary TCP drop while it is the active slot can re-evaluate
+        // and fail over — EngineStatus pushes never arrive on a dead
+        // socket. The backup handler also fires BackupDeviceConnectionChanged.
+        _primary.StateChanged += OnPrimaryStateChanged;
         _backup.StateChanged += OnBackupStateChanged;
     }
 
@@ -156,7 +166,7 @@ public sealed class RedundantConnectionPair : IDisposable
         _backup.Connect();
     }
 
-    /// <summary>Stops both managers.</summary>
+    /// <summary>Stops both managers and clears the active routing target.</summary>
     public void Disconnect()
     {
         if (_disposed)
@@ -166,6 +176,20 @@ public sealed class RedundantConnectionPair : IDisposable
 
         _primary.Disconnect();
         _backup.Disconnect();
+
+        CoreSlot? oldActive;
+        lock (_stateLock)
+        {
+            oldActive = _activeSlot;
+            _activeSlot = null;
+            _primaryState = EngineState.Unknown;
+            _backupState = EngineState.Unknown;
+        }
+
+        if (oldActive is not null)
+        {
+            ApplyActiveSwitch(oldActive, null);
+        }
     }
 
     /// <inheritdoc />
@@ -178,6 +202,7 @@ public sealed class RedundantConnectionPair : IDisposable
 
         _disposed = true;
 
+        _primary.StateChanged -= OnPrimaryStateChanged;
         _backup.StateChanged -= OnBackupStateChanged;
         _primaryObserver.Dispose();
         _backupObserver.Dispose();
@@ -199,6 +224,13 @@ public sealed class RedundantConnectionPair : IDisposable
         {
             // Already torn down.
         }
+
+        // The backup-side resources are owned by the pair: the primary's
+        // queue and transport are owned by QscDspTcp (constructed before
+        // SetBackupDeviceConnection is called), but the backup's were
+        // built by the pair's owner specifically to hand off here.
+        _backupQueue.Dispose();
+        _backupTransport?.Dispose();
     }
 
     private void OnEngineState(CoreSlot slot, EngineState state)
@@ -282,6 +314,41 @@ public sealed class RedundantConnectionPair : IDisposable
         }
 
         RedundancyStateChanged?.Invoke(this, new GenericSingleEventArgs<string>(_deviceId));
+    }
+
+    private void OnPrimaryStateChanged(object? sender, GenericSingleEventArgs<ConnectionState> args)
+    {
+        ConnectionState newState = args.Arg;
+        lock (_stateLock)
+        {
+            _primaryConnectionState = newState;
+
+            // If the primary just dropped while it was the active, force
+            // a re-evaluation under the policy. EngineStatus pushes will
+            // never arrive on a dead socket, so the State observer alone
+            // cannot detect this; the TCP-state handler is the trigger.
+            if (newState != ConnectionState.Connected && _activeSlot == CoreSlot.Primary)
+            {
+                _primaryState = EngineState.Unknown;
+            }
+        }
+
+        if (newState != ConnectionState.Connected)
+        {
+            CoreSlot? newActive;
+            CoreSlot? oldActive;
+            lock (_stateLock)
+            {
+                oldActive = _activeSlot;
+                newActive = _policy.PickActive(_activeSlot, _primaryState, _backupState);
+                _activeSlot = newActive;
+            }
+
+            if (newActive != oldActive)
+            {
+                ApplyActiveSwitch(oldActive, newActive);
+            }
+        }
     }
 
     private void OnBackupStateChanged(object? sender, GenericSingleEventArgs<ConnectionState> args)

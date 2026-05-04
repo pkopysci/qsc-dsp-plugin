@@ -21,36 +21,36 @@ namespace QscDspDevices.IntegrationTests.Redundancy;
 /// pair, drive a State change on the primary's connection, and verify
 /// a subsequent write lands on the backup's wire.
 /// </summary>
+/// <remarks>
+/// State changes are driven directly through each manager's dispatcher
+/// (synthetic EngineStatus frame) rather than waiting for FakeQrcServer's
+/// auto-push on accept; the auto-push raced the test event-handler under
+/// cold-start threadpool starvation (~3 in 10 runs).
+/// </remarks>
 public sealed class RedundancyEndToEndTests
 {
     [Fact]
     public async Task Failover_routes_subsequent_Control_Set_to_the_backup_wire()
     {
-        // Event-driven (no polling on busy code paths) to avoid the
-        // M3-era threadpool-starvation flake. We subscribe to the
-        // pair's RedundancyStateChanged event before Connect; the
-        // first fire signals Primary became active (FakeQrcServer
-        // auto-pushes EngineStatus { Active } on connect), the
-        // second signals failover to Backup.
         using var env = new RedundancyEnv();
-        var primaryActive = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var backupActive = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        env.Pair.RedundancyStateChanged += (_, _) =>
-        {
-            if (env.Pair.PrimaryDeviceActive)
-            {
-                primaryActive.TrySetResult(true);
-            }
-            else if (env.Pair.BackupDeviceActive)
-            {
-                backupActive.TrySetResult(true);
-            }
-        };
 
         env.Pair.Connect();
-        (await primaryActive.Task.WaitAsync(TimeSpan.FromSeconds(15))).Should().BeTrue();
 
-        // Send a Control.Set; should land on the primary's wire.
+        // Wait for both wires to actually accept TCP. Without this, a
+        // TryEnqueue could race the connect and TryEnqueue's "non-
+        // accepting" guard would refuse the write.
+        await WaitForAsync(
+            () => env.Pair.Primary.State == ConnectionState.Connected
+                  && env.Pair.Backup.State == ConnectionState.Connected,
+            TimeSpan.FromSeconds(15));
+
+        // Drive primary Active synchronously; this avoids the cold-
+        // start race that previously made the test flaky waiting for
+        // FakeQrcServer's auto-push.
+        env.PrimaryDispatcher.Dispatch(
+            """{"jsonrpc":"2.0","method":"EngineStatus","params":{"State":"Active"}}""");
+        env.Pair.PrimaryDeviceActive.Should().BeTrue();
+
         env.RoutingQueue.TryEnqueue(new global::QscDspDevices.Protocol.JsonRpc.JsonRpcRequest
         {
             Id = 100,
@@ -64,16 +64,15 @@ public sealed class RedundancyEndToEndTests
         Saw(env.BackupServer, "Control.Set", 100).Should().BeFalse(
             "the write should land on the primary's wire, not the backup's");
 
-        // Drive primary into Standby — backup should take over.
-        // FakeQrcServer doesn't expose a "push EngineStatus" method, so
-        // we drive the primary's dispatcher directly with the same
-        // notification the real Core would push.
+        // Drive primary into Standby + backup into Active. Both are
+        // synchronous through the in-memory dispatcher so there is no
+        // wait-for-event race.
+        env.BackupDispatcher.Dispatch(
+            """{"jsonrpc":"2.0","method":"EngineStatus","params":{"State":"Active"}}""");
         env.PrimaryDispatcher.Dispatch(
             """{"jsonrpc":"2.0","method":"EngineStatus","params":{"State":"Standby"}}""");
+        env.Pair.BackupDeviceActive.Should().BeTrue();
 
-        (await backupActive.Task.WaitAsync(TimeSpan.FromSeconds(15))).Should().BeTrue();
-
-        // Subsequent write goes to backup.
         env.RoutingQueue.TryEnqueue(new global::QscDspDevices.Protocol.JsonRpc.JsonRpcRequest
         {
             Id = 200,

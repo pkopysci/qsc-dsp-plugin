@@ -60,7 +60,7 @@
 - [x] 9.4 Coverage on `QscDspDevices.dll`: ≥ 90 % line.
 - [x] 9.5 DLL size (`-c Release`): ≤ 500 KB.
 - [x] 9.6 `openspec validate add-redundancy --strict`: passes.
-- [ ] 9.7 Run `qsc-critic` agent locally; address blockers.
+- [x] 9.7 Run `qsc-critic` agent locally; address blockers. Pass 1 found 3 blockers (flaky integration test, missing primary StateChanged subscription, leaked backup transport+queue) + concerns 4–7 + nits. All addressed: integration test rewritten to drive State via dispatcher (5/5 cold-start green); `OnPrimaryStateChanged` added symmetric to backup handler; `RedundantConnectionPair` now owns + disposes backup transport, queue; Disconnect clears `_activeSlot` and re-points routing queue; `EngineStatusObserver` checks `JTokenType.Null` explicitly. Concern 4 dismissed (`ChangeGroupManager` is non-disposable). Concern 7 already covered by `SwitchbackPolicyTests.QscRecommended_picks_Primary_at_startup_when_both_are_Active_and_no_current`.
 
 ## 10. Commit + PR
 

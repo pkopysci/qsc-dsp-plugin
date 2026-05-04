@@ -20,7 +20,7 @@
 ## 4. Threading shape — record D-T1, wire ThreadCensus (M2-7.3 / M3-4.5 / M3-4.6)
 
 - [x] 4.1 ThreadCensus.Register on each loop entry — already implemented in M2/M3, re-confirmed in slice 1. Roles: `session`, `send`, `keepalive`. The receive path runs on the BasicTcpClient callback thread (not plugin-owned).
-- [N/A] 4.2 Per D-T1, the M7 reading of README §4 is "≤ 3 concurrent threads", not "no orchestrator". The session task IS registered (it counts toward the budget); the receive callback is not (it's framework-owned). Slice 6 spec delta documents this.
+- [x] 4.2 Per D-T1, the M7 reading of README §4 is "≤ 3 concurrent threads", not "no orchestrator". The session task IS registered (it counts toward the budget); the receive callback is not (it's framework-owned). Slice 6 spec delta documents this. The original task — "RunSessionAsync does not register itself" — is superseded; closing as **resolved by deviation D-T1**.
 - [x] 4.3 `SPEC_COMPLIANCE.md` row 4.1 — picked up in slice 7 docs.
 - [x] 4.4 `ConnectionManagerTests.Connected_steady_state_registers_three_threadcensus_roles` pins the count. **Done in slice 1.**
 
@@ -47,10 +47,10 @@
 
 ## 8. Final documentation pass
 
-- [ ] 8.1 `README.md` — quickstart (single Core), redundant wiring snippet, supported framework versions, deviation summary table.
-- [ ] 8.2 `ARCHITECTURE.md` — sequence diagrams refreshed against the M6 routing-queue path; threading-shape diagram aligned with D-T1.
-- [ ] 8.3 `SPEC_COMPLIANCE.md` — every `⚠` row resolves to either `✅` (work done in M7) or `❌ Dx` with rationale. No `⚠` rows remain.
-- [ ] 8.4 `CHANGELOG.md` — first cut, M1 → M7. Format: keep-a-changelog. Public-API section sourced from `PublicAPI.Shipped.txt`.
+- [x] 8.1 `QUICKSTART.md` — quickstart (single Core), redundant wiring snippet, supported framework versions, deviation summary table. Lives next to README.md (which is the spec doc) so the integrator-facing how-to and the contract are clearly separated. **Done in slice 8.**
+- [x] 8.2 `ARCHITECTURE.md` — M7 section appended documenting D-T1, the per-side `ChangeGroup.Destroy` hook, the public-surface snapshot, and the namespace move. **Done in slice 8.**
+- [x] 8.3 `SPEC_COMPLIANCE.md` — every `⚠` / `⏳` row resolved to `✅` (rows 3.1, 3.5, 4.4, 6.5, 9.1, 9.2, 9.3 updated in slices 7 + 8). Only the legend retains the `⚠` symbol as a key. **Done in slice 8.**
+- [x] 8.4 `CHANGELOG.md` — keep-a-changelog M1 → M7. Public-API section reference removed (we use the reflection snapshot, not `PublicAPI.Shipped.txt`). **Done in slice 7 + slice 8.**
 
 ## 9. Build, format, coverage, size gates
 
@@ -60,7 +60,7 @@
 - [x] 9.4 CI coverage gate raised 90% → 91%. Local merged coverage 91.1%. Aspirational 92%+ deferred to M-ECP per slice 6 commit.
 - [x] 9.5 DLL size (`-c Release`): 112 KB / 500 KB.
 - [x] 9.6 `openspec validate add-hardening-and-final-docs --strict`: passes.
-- [ ] 9.7 Run `qsc-critic` agent locally; address blockers; record Pass 1 + Pass 2 in `REVIEW.md`.
+- [x] 9.7 Run `qsc-critic` agent locally; Pass 1 saved to `REVIEW.md`. Slice 8 fixed all 5 blockers (final docs, public-surface spec text, coverage 92% → 91% in proposal, redundant-pair `transport: null` defeating the IsConnected guard, `LogRedaction` dead-code consolidation onto `RedactingDebugFormatter`) plus concerns 6 (log assertion in double-Standby test) and 7 (ThreadCensus pin wait bumped to 30 s). Pass 2 to be appended after merge.
 
 ## 10. Commit + PR + archive
 

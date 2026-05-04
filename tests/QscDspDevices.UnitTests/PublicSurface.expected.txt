@@ -153,7 +153,7 @@ type QscDspDevices.Connectivity.Redundancy.EngineStatusObserver
   ctor (String,JsonRpcDispatcher,Action`1)
   method Void Dispose()
 type QscDspDevices.Connectivity.Redundancy.RedundantConnectionPair
-  ctor (String,ConnectionManager,CommandQueue,ChangeGroupManager,ConnectionManager,CommandQueue,ChangeGroupManager,RoutingCommandQueue,AudioControlServiceFanout,SwitchbackPolicy,IConnectionTransport)
+  ctor (String,ConnectionManager,CommandQueue,ChangeGroupManager,ConnectionManager,CommandQueue,ChangeGroupManager,RoutingCommandQueue,AudioControlServiceFanout,SwitchbackPolicy,IConnectionTransport,IConnectionTransport)
   event EventHandler`1 BackupDeviceConnectionChanged
   event EventHandler`1 RedundancyStateChanged
   method Void Connect()

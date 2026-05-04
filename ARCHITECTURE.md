@@ -121,6 +121,32 @@ pinning — for hard-realtime keepalive on a busy threadpool, say — the
 `PluginThreads.cs` shim can be reintroduced without changing the
 public contract of `ConnectionManager`.
 
+### M7 (shipped) — D-T1 codified
+
+M7 codifies the threading shape as deviation **D-T1**. The literal
+README §4 rule is "Internal thread count must be limitted to a
+maximum of 3 concurrent threads." The earlier M2-`threading-budget`
+spec elaborated that into "three named OS `Thread` instances + remove
+`RunSessionAsync`" — those elaborations went beyond the README and
+M7 walks them back. The Task-loop shape (`session`, `send`,
+`keepalive`) registered with `ThreadCensus` satisfies the README's
+literal count rule; the receive path is event-driven on the
+framework's `BasicTcpClient` callback (not plugin-owned) and is not
+counted. See `openspec/changes/archive/2026-05-04-add-hardening-and-final-docs/design.md` §D-T1 for the full rationale.
+
+**M7 also:**
+- Adds the per-side best-effort `ChangeGroup.Destroy` on graceful
+  disconnect, gated by `IConnectionTransport.IsConnected` (single-Core
+  via `QscDspTcp.OnStateChanged`, redundant via
+  `RedundantConnectionPair.OnPrimaryStateChanged` /
+  `OnBackupStateChanged`). The Core's socket-close GC remains the
+  safety net if the courtesy write fails.
+- Adds the `PublicSurfaceTests` reflection snapshot at
+  `tests/QscDspDevices.UnitTests/PublicSurface.expected.txt` to lock
+  the public API against accidental drift.
+- Moves the entry-point class `QscDspTcp` from `QscDspDevices.Plugin`
+  to the root `QscDspDevices` namespace (issue #14).
+
 ## Post-connect hydration sequence — M3 (shipped)
 
 Each (re)connect runs a `CompositePostConnectAction` of two steps:

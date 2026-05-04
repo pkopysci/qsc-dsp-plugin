@@ -81,11 +81,14 @@ public sealed class ConnectionManagerTests
         transport.SimulateConnectSuccess();
         await WaitForStateAsync(sut, ConnectionState.Connected);
 
-        // The send + keepalive loops register lazily on first iteration.
-        // Wait until the census reports the steady-state count.
+        // The send + keepalive loops register on first iteration of
+        // their Task.Run-scheduled bodies. Each loop registers BEFORE
+        // its first await, so the wait absorbs only the threadpool
+        // scheduling latency, not any clock interval — DeterministicClock
+        // advance is not required here.
         await WaitForAsync(
             () => sut.ThreadCensus.AliveCount == 3,
-            TimeSpan.FromSeconds(15));
+            TimeSpan.FromSeconds(30));
 
         IReadOnlyList<string> roles = sut.ThreadCensus.Snapshot();
         roles.Should().BeEquivalentTo(ExpectedRoles);

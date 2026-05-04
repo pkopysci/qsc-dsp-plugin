@@ -136,6 +136,74 @@ public sealed class RedundantConnectionPairTests
         backupSnapshot[0].Method.Should().Be("B");
     }
 
+    [Fact]
+    public void BackupDeviceOnline_is_false_before_any_TCP_event()
+    {
+        using var env = new PairEnv();
+        env.Pair.BackupDeviceOnline.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Disconnect_clears_active_slot_and_repoints_routing_queue()
+    {
+        using var env = new PairEnv();
+        PairEnv.PushEngineState(env.PrimaryDispatcher, "Active");
+        env.Pair.ActiveSlot.Should().Be(CoreSlot.Primary);
+
+        int eventCount = 0;
+        env.Pair.RedundancyStateChanged += (_, _) => eventCount++;
+
+        env.Pair.Disconnect();
+
+        env.Pair.ActiveSlot.Should().BeNull();
+        env.Pair.PrimaryDeviceActive.Should().BeFalse();
+        env.Pair.BackupDeviceActive.Should().BeFalse();
+        eventCount.Should().Be(1, "Disconnect from an active slot should fire the state-change event");
+
+        // Routing queue is now non-accepting (no active inner queue).
+        env.RoutingQueue.TryEnqueue(new global::QscDspDevices.Protocol.JsonRpc.JsonRpcRequest { Id = 99, Method = "X" }).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Disconnect_with_no_active_slot_is_a_noop_for_events()
+    {
+        using var env = new PairEnv();
+        int eventCount = 0;
+        env.Pair.RedundancyStateChanged += (_, _) => eventCount++;
+
+        env.Pair.Disconnect();
+
+        env.Pair.ActiveSlot.Should().BeNull();
+        eventCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void Dispose_is_idempotent()
+    {
+        using var env = new PairEnv();
+        env.Pair.Dispose();
+        Action secondDispose = () => env.Pair.Dispose();
+        secondDispose.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Connect_after_Dispose_throws_ObjectDisposedException()
+    {
+        using var env = new PairEnv();
+        env.Pair.Dispose();
+        Action act = () => env.Pair.Connect();
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void Disconnect_after_Dispose_is_noop()
+    {
+        using var env = new PairEnv();
+        env.Pair.Dispose();
+        Action act = () => env.Pair.Disconnect();
+        act.Should().NotThrow();
+    }
+
     private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
     {
         DateTime deadline = DateTime.UtcNow + timeout;

@@ -6,7 +6,31 @@ project follows [Semantic Versioning](https://semver.org/) once shipped.
 Until the first stable tag, internal milestones are listed in reverse-
 chronological order.
 
-## [Unreleased] — M7 Hardening (`milestone/m7-hardening`)
+## [Unreleased] — M-ECP part 2 (`milestone/m-ecp-part-2`)
+
+### Added
+
+- **ECP backend full integration.** Selection automatic by well-known port: `1710` → QRC (M2-M7 path, unchanged), `1702` → ECP. Zero new public-API surface.
+- `EcpConnectionManager` + `EcpCommandQueue` — duplication-by-design from the M2 QRC `ConnectionManager` + `CommandQueue`, mirroring the state machine, reconnect cadence, and 3-role `ThreadCensus` registration (session, send, keepalive). Keepalive emits `sg` every 30 s of outbound silence.
+- ECP `login_required` handshake — credentials supplied via `Initialize(host, port, username, password)`; on `login_failed` the manager triggers the standard 15 s reconnect cycle.
+- Parallel ECP service tier (`EcpAudioControlService`, `EcpAudioRoutingService`, `EcpAudioZoneEnableService`, `EcpLogicTriggerService`) — emits `csv` / `css` / `ct` / `ssl` against the existing M2-M7 registries; reuses the `LevelScaler` and `AudioChannelRegistry` unchanged.
+- `FakeEcpServer` in `TestSupport/Fakes/` — in-process TCP listener that speaks ECP per `research/ECP_PROTOCOL.md`. Fault-injection knobs: `SetActive`, `RespondWithCoreNotActive`, `EmitMalformed`, `RequireLogin`. Used by the new integration suite.
+
+### Changed
+
+- `QscDspTcp.SetBackupDeviceConnection`: now refuses mixed-protocol pairs with `Logger.Error`. Same-protocol ECP pairs refuse with `Logger.Notice` and a deferral to M-ECP-part-3 (sg-poll integration with `RedundantConnectionPair`).
+
+### Test coverage
+
+- 91 new unit tests (framer, quoting, commands, responses, dispatcher, queue, connection manager, audio control, redundancy refusal).
+- 3 new integration tests against `FakeEcpServer` (sg round-trip, csv echo, login handshake).
+- All 420 unit + 19 integration + 15 property tests green.
+
+### Deferred
+
+- M-ECP-part-3: `EcpRedundantConnectionPair` (sg-polling translation into `RedundantConnectionPair`'s `EngineState` consumer). Covered design-wise in `openspec/changes/.../design.md` §D-E3.
+
+## [M7 Hardening] — `2026-05-04-add-hardening-and-final-docs`
 
 ### Fixed
 

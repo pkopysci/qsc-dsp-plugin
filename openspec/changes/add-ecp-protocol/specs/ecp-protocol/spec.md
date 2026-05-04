@@ -72,41 +72,40 @@ When an ECP Core sends `login_required\r\n` immediately after TCP accept (or in 
 - **THEN** `Logger.Error` is emitted with a message containing "ECP login_failed"
 - **AND** the connection transitions to `Disconnecting` and then begins the 15 s reconnect cadence
 
-### Requirement: ECP feature-gap operations log Logger.Notice
+### Requirement: ECP service tier honours framework surface within ECP's expressible subset
 
-Operations whose semantics are not expressible in ECP SHALL log `Logger.Notice` with the message format `"<operation> requires QRC; ignored under ECP"` and return the documented fallback (false / no-op). The plugin MUST NOT throw for an unsupported-under-ECP operation.
+Every public operation the framework surface exposes (`Set/GetAudio*Level`, `Set/GetAudio*Mute`, `RecallAudioPreset`, `RouteAudio`, `ClearAudioRoute`, `Set/Toggle/QueryAudioZoneEnable`, `PulseDspLogicTrigger`) is expressible in ECP because the framework's M3-M5 contract requires every routable / triggerable / mutable control to register a named-control tag (routerTag, levelTag, muteTag, zone-enable controlTag, trigger tagName). The ECP backend SHALL service every framework call by emitting the corresponding wire command (`csv` / `css` / `csp` / `ct` / `ssl`) against the registered named tag.
 
-The unsupported operations under ECP are:
+Direct matrix-crosspoint-by-index addressing is NOT exposed by the M3-M5 framework surface (the registries enforce a named-control tag), so it cannot reach the ECP backend and does not require a runtime guard or fallback log.
 
-- `SetAudioRoute` against a matrix crosspoint addressed by index (rather than by named control)
-- Direct component enumeration via the framework surface (none of the M3-M5 services expose this today; reserved)
+Component enumeration is similarly not exposed by the M3-M5 framework surface — reserved for a hypothetical future feature.
 
-#### Scenario: SetAudioRoute by matrix index logs Notice and returns false
+#### Scenario: ECP RouteAudio honours the registered router tag
 
 - **GIVEN** the plugin is running over ECP
-- **AND** the `outputId` resolves to a matrix-crosspoint-by-index registration (no named-control alias)
-- **WHEN** `SetAudioRoute(outputId, inputId)` is called
-- **THEN** `Logger.Notice` is emitted with text containing "requires QRC"
-- **AND** the call returns false
-- **AND** no ECP frame is enqueued
+- **AND** an output `out1` is registered with `routerTag = "Mixer.input.1.gain"`
+- **AND** an input `in3` is registered with `bankIndex = 3`
+- **WHEN** `RouteAudio("in3", "out1")` is called
+- **THEN** the next outbound ECP frame is `csv "Mixer.input.1.gain" 3\n`
 
-### Requirement: ECP redundancy probes via sg poll
-
-Under ECP, the plugin SHALL poll `sg` every 2 s on each side of a redundant pair to translate `IS_ACTIVE` into the `EngineState.Active` / `EngineState.Standby` values that `RedundantConnectionPair` consumes. The pair coordinator and switchback policy from M6 are unchanged.
+### Requirement: ECP redundant pairs are refused at SetBackupDeviceConnection
 
 Mixed-protocol pairs (one side QRC, the other ECP) MUST be refused at `SetBackupDeviceConnection` with `Logger.Error("redundant pair must use same protocol on both sides; call refused")`.
 
-#### Scenario: Primary IS_ACTIVE flip triggers failover
+Same-protocol ECP pairs (both sides on port 1702) are also refused in this milestone with `Logger.Notice` — the implementation is tracked as M-ECP-part-3 (sg-poll integration with `RedundantConnectionPair` requires either widening the pair's types or building a parallel `EcpRedundantConnectionPair`; both choices have nontrivial scope and are deferred). When wired in M-ECP-part-3, the implementation will poll `sg` every 2 s on each side, translate `IS_ACTIVE` into the M6 `EngineState.Active` / `Standby` values, and reuse the existing `SwitchbackPolicy`.
 
-- **GIVEN** an ECP redundant pair with primary `IS_ACTIVE=1` and backup `IS_ACTIVE=0`
-- **AND** the pair is in `ActiveSlot=Primary`
-- **WHEN** the next `sg` poll on the primary returns `IS_ACTIVE=0` and the next poll on the backup returns `IS_ACTIVE=1`
-- **THEN** the policy promotes Backup
-- **AND** subsequent writes route to the backup's command queue
+Single-Core ECP (no `SetBackupDeviceConnection`) is unaffected and supports the full M3-M5 feature subset.
 
-#### Scenario: Mixed-protocol pair is refused
+#### Scenario: Mixed-protocol pair is refused with Error
 
 - **GIVEN** the plugin called `Initialize("10.0.0.1", 1710, …)` (QRC primary)
 - **WHEN** the integrator calls `SetBackupDeviceConnection("10.0.0.2", 1702)` (ECP backup)
 - **THEN** `Logger.Error` is emitted with text containing "redundant pair must use same protocol"
+- **AND** no backup connection is constructed
+
+#### Scenario: Same-protocol ECP pair is refused with Notice (M-ECP-part-2 limitation)
+
+- **GIVEN** the plugin called `Initialize("10.0.0.1", 1702, …)` (ECP primary)
+- **WHEN** the integrator calls `SetBackupDeviceConnection("10.0.0.2", 1702)` (ECP backup)
+- **THEN** `Logger.Notice` is emitted naming "M-ECP-part-3"
 - **AND** no backup connection is constructed

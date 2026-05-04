@@ -94,11 +94,39 @@ All errors, warnings, notices, and debug messages route through `gcu_common_util
 
 Outbound `Logon` payloads are redacted via `RedactingDebugFormatter` before any `Logger.Debug` formatting — the `password` field is replaced with `***` for log capture; on-wire bytes are unchanged.
 
+## ECP (legacy fallback)
+
+Modern Q-SYS Cores speak QRC on TCP/1710. Older Cores and hostile-network deployments where TLS-less ASCII is the only option through the firewall can use the ECP backend on TCP/1702. Selection is automatic by port:
+
+```csharp
+// QRC (default — modern Cores)
+dsp.Initialize("192.168.1.50", 1710, "admin", "...");
+
+// ECP (legacy / firewall-restricted)
+dsp.Initialize("192.168.1.50", 1702, "admin", "...");
+```
+
+Public surface is identical. The plugin internally routes every call to either the QRC or ECP backend based on the port supplied at `Initialize`.
+
+### ECP feature support
+
+| Feature | QRC | ECP |
+|---------|-----|-----|
+| `Set/GetAudioInputLevel` (named gain) | ✅ | ✅ via `csv` |
+| `Set/GetAudioOutputMute` (named mute) | ✅ | ✅ via `css` |
+| `RecallAudioPreset` | ✅ | ✅ via `ssl` |
+| `RouteAudio` (named-control router) | ✅ | ✅ via `csv` on `routerTag` |
+| `SetAudioZoneEnable` (named zone control) | ✅ | ✅ via `css` |
+| `PulseDspLogicTrigger` | ✅ | ✅ via `ct` |
+| `SetBackupDeviceConnection` redundancy | ✅ EngineStatus push-based | ⚠ same-protocol pairs deferred to M-ECP-part-3 (sg-poll-based) |
+
+Mixed-protocol pairs (one side QRC, the other ECP) are refused with `Logger.Error` per the `redundancy` capability spec.
+
 ## What v1.0 does NOT include
 
-- ECP (External Control Protocol) backend. Modern Q-SYS Cores (Q-Sys 9.x+) speak QRC out of the box; ECP support is the next milestone (`M-ECP`).
 - Mid-session `AddInputChannel` / `AddOutputChannel` / `AddPreset` subscribe-on-the-wire. Today the registry add is staged and applied at next hydration. Configuration before `Connect()` works as advertised.
-- Per-symbol `public` → `internal` reduction. The current public surface is wider than necessary because tests reference internals directly. M-ECP includes the reduction work.
+- Per-symbol `public` → `internal` reduction. The current public surface is wider than necessary because tests reference internals directly.
+- ECP redundant-pair via `sg`-polling (deferred to M-ECP-part-3).
 
 ## Filing issues
 

@@ -36,13 +36,17 @@ public sealed class RedundancyEndToEndTests
 
         env.Pair.Connect();
 
-        // Wait for both wires to actually accept TCP. Without this, a
-        // TryEnqueue could race the connect and TryEnqueue's "non-
-        // accepting" guard would refuse the write.
+        // Wait for both wires to be Connected AND accepting. The
+        // ConnectionManager fires StateChanged(Connected) BEFORE it
+        // calls _queue.StartAccepting (see OnConnectedAsync); under
+        // load that gap can be wide enough that a TryEnqueue races
+        // the StartAccepting and gets refused.
         await WaitForAsync(
             () => env.Pair.Primary.State == ConnectionState.Connected
-                  && env.Pair.Backup.State == ConnectionState.Connected,
-            TimeSpan.FromSeconds(15));
+                  && env.Pair.Backup.State == ConnectionState.Connected
+                  && env.PrimaryQueue.IsAccepting
+                  && env.BackupQueue.IsAccepting,
+            TimeSpan.FromSeconds(30));
 
         // Drive primary Active synchronously; this avoids the cold-
         // start race that previously made the test flaky waiting for
@@ -60,7 +64,7 @@ public sealed class RedundancyEndToEndTests
 
         await WaitForAsync(
             () => Saw(env.PrimaryServer, "Control.Set", 100),
-            TimeSpan.FromSeconds(15));
+            TimeSpan.FromSeconds(30));
         Saw(env.BackupServer, "Control.Set", 100).Should().BeFalse(
             "the write should land on the primary's wire, not the backup's");
 
@@ -82,7 +86,7 @@ public sealed class RedundancyEndToEndTests
 
         await WaitForAsync(
             () => Saw(env.BackupServer, "Control.Set", 200),
-            TimeSpan.FromSeconds(15));
+            TimeSpan.FromSeconds(30));
     }
 
     [Fact]
@@ -92,8 +96,10 @@ public sealed class RedundancyEndToEndTests
         env.Pair.Connect();
         await WaitForAsync(
             () => env.Pair.Primary.State == ConnectionState.Connected
-                  && env.Pair.Backup.State == ConnectionState.Connected,
-            TimeSpan.FromSeconds(15));
+                  && env.Pair.Backup.State == ConnectionState.Connected
+                  && env.PrimaryQueue.IsAccepting
+                  && env.BackupQueue.IsAccepting,
+            TimeSpan.FromSeconds(30));
 
         // FakeQrcServer auto-pushes Active on accept. Wait for both
         // dispatchers to have settled into Primary-active before we
@@ -121,7 +127,7 @@ public sealed class RedundancyEndToEndTests
 
         await WaitForAsync(
             () => Saw(env.BackupServer, "Control.Set", 300),
-            TimeSpan.FromSeconds(15));
+            TimeSpan.FromSeconds(30));
 
         // Primary returns to Active → default policy switches back to primary.
         env.PrimaryDispatcher.Dispatch(
@@ -137,7 +143,7 @@ public sealed class RedundancyEndToEndTests
 
         await WaitForAsync(
             () => Saw(env.PrimaryServer, "Control.Set", 400),
-            TimeSpan.FromSeconds(15));
+            TimeSpan.FromSeconds(30));
     }
 
     [Fact]
@@ -147,8 +153,10 @@ public sealed class RedundancyEndToEndTests
         env.Pair.Connect();
         await WaitForAsync(
             () => env.Pair.Primary.State == ConnectionState.Connected
-                  && env.Pair.Backup.State == ConnectionState.Connected,
-            TimeSpan.FromSeconds(15));
+                  && env.Pair.Backup.State == ConnectionState.Connected
+                  && env.PrimaryQueue.IsAccepting
+                  && env.BackupQueue.IsAccepting,
+            TimeSpan.FromSeconds(30));
 
         // Wait for the auto-pushed Active state to settle, then drive
         // both into Standby. Without the wait, a late auto-push of

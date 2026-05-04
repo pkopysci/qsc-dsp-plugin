@@ -760,10 +760,10 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         Justification = "The ECP transport, queue, and ConnectionManager are stashed in long-lived fields and disposed in Dispose. CA2000 does not see the ownership transfer through field assignment.")]
     private void InitializeEcp(string hostId, string hostname, int port, string username, string password)
     {
-        var transport = BuildTransport(hostname, port);
+        IConnectionTransport transport = BuildTransport(hostname, port);
         var queue = new QscDspDevices.Connectivity.Ecp.EcpCommandQueue(hostId);
         var dispatcher = new QscDspDevices.Protocol.Ecp.EcpDispatcher(hostId);
-        var creds = string.IsNullOrEmpty(username) && string.IsNullOrEmpty(password)
+        Connectivity.Ecp.EcpCredentials? creds = string.IsNullOrEmpty(username) && string.IsNullOrEmpty(password)
             ? null
             : new QscDspDevices.Connectivity.Ecp.EcpCredentials(username ?? string.Empty, password ?? string.Empty);
 

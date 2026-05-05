@@ -1,0 +1,5 @@
+{
+  "$schema": "https://xunit.net/schema/current/xunit.runner.schema.json",
+  "//": "We disable xUnit's parallel test-collection execution for this project because several tests exercise async state machines (ConnectionManager, QscDspTcp) that schedule continuations onto the .NET threadpool. Under default xUnit parallelism, ~130 tests share the threadpool simultaneously and the session task's first scheduling latency exceeds the test's 10-second wait, producing flaky timeouts. Serial execution of test classes still parallelizes within a class via [Theory] inputs and is fast enough on a developer machine and in CI.",
+  "parallelizeTestCollections": false
+}

@@ -236,28 +236,51 @@ internal sealed class EcpConnectionManager : IDisposable
 
                 try
                 {
+                    // Subscribe the auth observer BEFORE TryConnectAsync
+                    // so the dispatcher already has it when the rx
+                    // pipeline begins delivering bytes (TryConnectAsync
+                    // wires the rx subscription, which then forwards to
+                    // the dispatcher). Without this ordering, a server
+                    // that pushes `login_required` immediately on accept
+                    // can land the banner before we subscribe.
+                    EcpCredentials? creds = _credentialsSource();
+                    TaskCompletionSource<bool>? authOutcome = creds is null ? null : new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    EventHandler<gcu_common_utils.GenericEventArgs.GenericSingleEventArgs<EcpResponse>>? authHandler = null;
+                    if (creds is not null && authOutcome is not null)
+                    {
+                        authHandler = MakeAuthHandler(creds, authOutcome);
+                        _dispatcher.ResponseReceived += authHandler;
+                    }
+
                     bool connected = await TryConnectAsync(cancellationToken).ConfigureAwait(false);
                     if (!connected)
                     {
+                        if (authHandler is not null)
+                        {
+                            _dispatcher.ResponseReceived -= authHandler;
+                        }
+
                         await DelayBeforeReconnectAsync(cancellationToken).ConfigureAwait(false);
                         continue;
                     }
 
                     StartIoLoops(cancellationToken);
 
-                    // ECP §2: the Core may send `login_required` immediately
-                    // on accept or in reply to the first command. We give it
-                    // 500ms to surface the banner; absence is treated as
-                    // anonymous-mode and we proceed straight to Accepting.
-                    bool authed = await TryAuthenticateAsync(cancellationToken).ConfigureAwait(false);
-                    if (!authed)
+                    if (authOutcome is not null)
                     {
-                        // login_failed already logged at Error; tear down and
-                        // let the M2 reconnect cycle take over.
-                        Log.Error(_deviceId, "ECP authentication failed; reconnecting after the standard interval.");
-                        CleanupAfterDisconnect();
-                        await DelayBeforeReconnectAsync(cancellationToken).ConfigureAwait(false);
-                        continue;
+                        bool authed = await WaitForAuthAsync(authOutcome.Task, cancellationToken).ConfigureAwait(false);
+                        if (authHandler is not null)
+                        {
+                            _dispatcher.ResponseReceived -= authHandler;
+                        }
+
+                        if (!authed)
+                        {
+                            Log.Error(_deviceId, "ECP authentication failed; reconnecting after the standard interval.");
+                            CleanupAfterDisconnect();
+                            await DelayBeforeReconnectAsync(cancellationToken).ConfigureAwait(false);
+                            continue;
+                        }
                     }
 
                     TransitionTo(ConnectionState.Connected, "transport up + auth complete");
@@ -297,6 +320,19 @@ internal sealed class EcpConnectionManager : IDisposable
 
     private async Task<bool> TryConnectAsync(CancellationToken cancellationToken)
     {
+        // Subscribe to Connected/RxReceived BEFORE calling Connect.
+        // Two races to defeat:
+        //  (a) StubTransport: the test thread can call
+        //      SimulateConnectSuccess between TransitionTo(Connecting)
+        //      and our subscription. Mitigated by the IsConnected
+        //      backstop below.
+        //  (b) RawTcpTransport: the server may push an immediate
+        //      banner (e.g., login_required) on accept; the read
+        //      loop fires RxReceived as soon as bytes arrive, and
+        //      with no subscriber the bytes are silently lost.
+        //      Mitigated by subscribing onRx here so the framer +
+        //      dispatcher see the banner before StartIoLoops takes
+        //      ownership.
         var connected = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         EventHandler<EventArgs> onConnected = (_, _) => connected.TrySetResult(true);
         EventHandler<GenericSingleEventArgs<string>> onFailed = (_, args) =>
@@ -307,9 +343,15 @@ internal sealed class EcpConnectionManager : IDisposable
 
         _transport.Connected += onConnected;
         _transport.ConnectionFailed += onFailed;
+        _transport.RxReceived += OnRxReceived;
 
         try
         {
+            if (_transport.IsConnected)
+            {
+                connected.TrySetResult(true);
+            }
+
             using CancellationTokenRegistration registration = cancellationToken.Register(() => connected.TrySetResult(false));
             _transport.Connect();
             return await connected.Task.ConfigureAwait(false) && !cancellationToken.IsCancellationRequested;
@@ -318,6 +360,36 @@ internal sealed class EcpConnectionManager : IDisposable
         {
             _transport.Connected -= onConnected;
             _transport.ConnectionFailed -= onFailed;
+
+            // RxReceived stays subscribed past TryConnectAsync;
+            // CleanupAfterDisconnect removes it on each disconnect.
+        }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "The rx-event chain ultimately invokes user-supplied service callbacks; per README §\"Exception Handling\" the plugin must not crash the host on a misbehaving callback.")]
+    private void OnRxReceived(object? sender, GenericSingleEventArgs<ReadOnlyMemory<byte>> args)
+    {
+        try
+        {
+            foreach (string frame in _framer.Append(args.Arg.Span))
+            {
+                try
+                {
+                    _dispatcher.Dispatch(frame);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(_deviceId, $"ECP inbound dispatch threw {ex.GetType().Name}: {ex.Message}. Continuing.");
+                }
+            }
+        }
+        catch (FrameTooLargeException ex)
+        {
+            Log.Error(_deviceId, $"ECP frame exceeded max size: {ex.Message}. Dropping connection.");
+            CancelSafely(_ioCts);
         }
     }
 
@@ -325,27 +397,12 @@ internal sealed class EcpConnectionManager : IDisposable
         "Design",
         "CA1031:Do not catch general exception types",
         Justification = "Auth handler runs on the receive callback path; per README §\"Exception Handling\" the plugin must not crash the host on a transport / framer fault while sending the login command. Log Error and let the reconnect cycle take over.")]
-    private async Task<bool> TryAuthenticateAsync(CancellationToken cancellationToken)
-    {
-        // Subscribe to the dispatcher with a TCS that completes when we
-        // see one of: login_required (we send the login), login_success
-        // (auth done), or login_failed (auth failed). Anonymous-mode
-        // Cores never send a banner; in that case we time out the
-        // 500ms wait and proceed.
-        var outcome = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        EventHandler<gcu_common_utils.GenericEventArgs.GenericSingleEventArgs<EcpResponse>> handler = (_, args) =>
+    private EventHandler<gcu_common_utils.GenericEventArgs.GenericSingleEventArgs<EcpResponse>> MakeAuthHandler(EcpCredentials creds, TaskCompletionSource<bool> outcome)
+        => (_, args) =>
         {
             switch (args.Arg.Kind)
             {
                 case EcpResponseKind.LoginRequired:
-                    EcpCredentials? creds = _credentialsSource();
-                    if (creds is null)
-                    {
-                        Log.Error(_deviceId, "ECP Core sent login_required but no credentials configured.");
-                        outcome.TrySetResult(false);
-                        return;
-                    }
-
                     try
                     {
                         _transport.Send(EcpFramer.Encode(EcpCommand.Login(creds.Username, creds.Pin)));
@@ -368,24 +425,18 @@ internal sealed class EcpConnectionManager : IDisposable
             }
         };
 
-        _dispatcher.ResponseReceived += handler;
-        try
+#pragma warning disable SA1204 // Static members should appear before non-static members
+    private static async Task<bool> WaitForAuthAsync(Task<bool> outcomeTask, CancellationToken cancellationToken)
+    {
+        Task winner = await Task.WhenAny(outcomeTask, Task.Delay(TimeSpan.FromSeconds(5), cancellationToken)).ConfigureAwait(false);
+        if (winner == outcomeTask)
         {
-            // Race the auth outcome against a 500ms anonymous-mode
-            // window. If neither arrives, treat the connection as
-            // anonymous and proceed.
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-            using (linkedCts.Token.Register(() => outcome.TrySetResult(true)))
-            {
-                return await outcome.Task.ConfigureAwait(false);
-            }
+            return await outcomeTask.ConfigureAwait(false);
         }
-        finally
-        {
-            _dispatcher.ResponseReceived -= handler;
-        }
+
+        return !cancellationToken.IsCancellationRequested;
     }
+#pragma warning restore SA1204
 
     private async Task DelayBeforeReconnectAsync(CancellationToken cancellationToken)
     {
@@ -399,42 +450,16 @@ internal sealed class EcpConnectionManager : IDisposable
         }
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Design",
-        "CA1031:Do not catch general exception types",
-        Justification = "The rx-event chain ultimately invokes user-supplied service callbacks; per README §\"Exception Handling\" the plugin must not crash the host on a misbehaving callback.")]
     private void StartIoLoops(CancellationToken sessionToken)
     {
         _ioCts?.Dispose();
         _ioCts = CancellationTokenSource.CreateLinkedTokenSource(sessionToken);
         CancellationToken ioToken = _ioCts.Token;
 
-        EventHandler<GenericSingleEventArgs<ReadOnlyMemory<byte>>> onRx = (_, args) =>
-        {
-            try
-            {
-                foreach (string frame in _framer.Append(args.Arg.Span))
-                {
-                    try
-                    {
-                        _dispatcher.Dispatch(frame);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error(_deviceId, $"ECP inbound dispatch threw {ex.GetType().Name}: {ex.Message}. Continuing.");
-                    }
-                }
-            }
-            catch (FrameTooLargeException ex)
-            {
-                Log.Error(_deviceId, $"ECP frame exceeded max size: {ex.Message}. Dropping connection.");
-                CancelSafely(_ioCts);
-            }
-        };
-
-        _transport.RxReceived += onRx;
-
-        _sendLoopTask = Task.Run(() => RunSendLoopAsync(onRx, ioToken), ioToken);
+        // RxReceived was subscribed in TryConnectAsync (see comment
+        // there); we don't re-subscribe here. The send + keepalive
+        // loops own their own ThreadCensus registrations.
+        _sendLoopTask = Task.Run(() => RunSendLoopAsync(ioToken), ioToken);
         _keepaliveTask = Task.Run(() => RunKeepaliveLoopAsync(ioToken), ioToken);
     }
 
@@ -442,7 +467,7 @@ internal sealed class EcpConnectionManager : IDisposable
         "Design",
         "CA1031:Do not catch general exception types",
         Justification = "Send loop must not crash the host on transport faults; Log Warn and let the reconnect cycle take over (README §\"Exception Handling\").")]
-    private async Task RunSendLoopAsync(EventHandler<GenericSingleEventArgs<ReadOnlyMemory<byte>>> rxHandler, CancellationToken cancellationToken)
+    private async Task RunSendLoopAsync(CancellationToken cancellationToken)
     {
         ThreadCensusRegistration registration = _threadCensus.Register("send");
         try
@@ -475,7 +500,6 @@ internal sealed class EcpConnectionManager : IDisposable
         }
         finally
         {
-            _transport.RxReceived -= rxHandler;
             registration.Dispose();
         }
     }
@@ -528,6 +552,10 @@ internal sealed class EcpConnectionManager : IDisposable
         Justification = "Cleanup runs on the disconnect path; tearing down a transport / cancellation token can surface any IO error. Log Warn and continue (README §\"Exception Handling\").")]
     private void CleanupAfterDisconnect()
     {
+        // Unsubscribe rx so the next connect attempt re-subscribes
+        // fresh (TryConnectAsync owns the subscription lifecycle).
+        _transport.RxReceived -= OnRxReceived;
+
         try
         {
             CancelSafely(_ioCts);

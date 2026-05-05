@@ -6,7 +6,21 @@ project follows [Semantic Versioning](https://semver.org/) once shipped.
 Until the first stable tag, internal milestones are listed in reverse-
 chronological order.
 
-## [Unreleased] — M-ECP part 2 (`milestone/m-ecp-part-2`)
+## [Unreleased] — M-ECP part 3 (`milestone/m-ecp-part-3`)
+
+### Added
+
+- **AutoPoll hydration on connect.** `EcpHydrateAction` runs once per connect cycle (after auth, before the queue starts accepting framework traffic): emits `cgc 1` + `cga 1 "<tag>"` per registered named control + `cgsna 1 2000` to start a 2-s no-ack poll. Tag deduplication across the audio-channel / zone / logic-trigger registries keeps the wire traffic minimal.
+- **`cv` → service-tier bridge.** `EcpAutoPollSubscription` listens on the dispatcher, filters `cv` lines, and routes each to the right ECP service via new `OnInbound{Level,Mute,Route,Zone,Trigger}` hooks. The optimistic cache is corrected when the Core's value disagrees, and the corresponding change event is re-fired with the authoritative value.
+- **`sg`-poll redundancy.** `EcpEngineStateProbe` schedules an `sg` every 2 s on each side of a redundant pair, parses `sr`, and translates `IS_ACTIVE` into `EngineState.Active` / `Standby`. `EcpRedundantConnectionPair` consumes those transitions through the M6 `SwitchbackPolicy` unchanged.
+- **Same-protocol ECP redundancy.** `QscDspTcp.SetBackupDeviceConnection` for an ECP primary now constructs the pair instead of refusing with `Logger.Notice`. Mixed-protocol refusal (the M-ECP-part-2 invariant) is unchanged.
+- 15+ unit tests (`EcpHydrateActionTests`, `EcpAutoPollSubscriptionTests`, `EcpEngineStateProbeTests`, `EcpRoutingCommandQueueTests`, `EcpRedundantConnectionPairTests`) + 2 integration tests (`EcpRedundancyEndToEndTests`).
+
+### Changed
+
+- `EcpCommandQueue` un-sealed and `TryEnqueue` made `virtual` so the new `EcpRoutingCommandQueue` facade can override the routing without re-implementing the bounded-channel state — same pattern as M6's QRC `RoutingCommandQueue`.
+
+## [M-ECP part 2] — `2026-05-04-add-ecp-protocol`
 
 ### Added
 

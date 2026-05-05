@@ -34,6 +34,25 @@ internal sealed class EcpLogicTriggerService
         _queue = queue;
     }
 
+    /// <summary>Raised on observed trigger-state changes from the Core.</summary>
+    public event EventHandler<gcu_common_utils.GenericEventArgs.GenericSingleEventArgs<string>>? LogicTriggerStateChanged;
+
+    /// <summary>
+    /// Reconciles an inbound <c>cv</c> on a registered trigger
+    /// control. Emits <see cref="LogicTriggerStateChanged"/> when the
+    /// observed state changes; trigger semantics are pulse-only on the
+    /// framework surface, so the event fires on every observed
+    /// transition.
+    /// </summary>
+    /// <param name="triggerId">The framework trigger id.</param>
+    /// <param name="state">The Core-reported state.</param>
+    public void OnInboundTrigger(string triggerId, bool state)
+    {
+        ArgumentNullException.ThrowIfNull(triggerId);
+        _ = state;
+        LogicTriggerStateChanged?.Invoke(this, new gcu_common_utils.GenericEventArgs.GenericSingleEventArgs<string>(triggerId));
+    }
+
     /// <summary>Pulses the trigger via <c>ct CONTROL_ID</c>.</summary>
     /// <param name="id">The framework trigger id.</param>
     public void Pulse(string id)

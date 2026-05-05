@@ -139,6 +139,62 @@ internal sealed class EcpAudioControlService
         return _muteCache.TryGetValue(channelId, out bool mute) && mute;
     }
 
+    /// <summary>
+    /// Reconciles the optimistic level cache against an inbound
+    /// <c>cv</c> from the AutoPoll bridge. If the Core's value
+    /// disagrees with the optimistic cache, the cache is corrected
+    /// and <see cref="AudioInputLevelChanged"/> /
+    /// <see cref="AudioOutputLevelChanged"/> is re-fired.
+    /// </summary>
+    /// <param name="channel">The registered channel matching the inbound tag.</param>
+    /// <param name="rawValue">The numeric value from the <c>cv</c> response.</param>
+    public void OnInboundLevel(AudioChannel channel, double rawValue)
+    {
+        ArgumentNullException.ThrowIfNull(channel);
+        int frameworkValue = LevelScaler.ToFramework(rawValue, channel.LevelMin, channel.LevelMax);
+        if (_levelCache.TryGetValue(channel.Id, out int prior) && prior == frameworkValue)
+        {
+            return;
+        }
+
+        _levelCache[channel.Id] = frameworkValue;
+        var args = new GenericDualEventArgs<string, string>(channel.Id, frameworkValue.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (channel.IsInput)
+        {
+            AudioInputLevelChanged?.Invoke(this, args);
+        }
+        else
+        {
+            AudioOutputLevelChanged?.Invoke(this, args);
+        }
+    }
+
+    /// <summary>
+    /// Reconciles the optimistic mute cache against an inbound
+    /// <c>cv</c> on the channel's mute tag.
+    /// </summary>
+    /// <param name="channel">The registered channel matching the inbound tag.</param>
+    /// <param name="muted">True if the Core reports the control muted.</param>
+    public void OnInboundMute(AudioChannel channel, bool muted)
+    {
+        ArgumentNullException.ThrowIfNull(channel);
+        if (_muteCache.TryGetValue(channel.Id, out bool prior) && prior == muted)
+        {
+            return;
+        }
+
+        _muteCache[channel.Id] = muted;
+        var args = new GenericDualEventArgs<string, string>(channel.Id, muted ? "true" : "false");
+        if (channel.IsInput)
+        {
+            AudioInputMuteChanged?.Invoke(this, args);
+        }
+        else
+        {
+            AudioOutputMuteChanged?.Invoke(this, args);
+        }
+    }
+
     /// <summary>Recalls a preset by emitting <c>ssl</c>.</summary>
     /// <param name="presetId">The preset id (registered with the channel registry).</param>
     public void RecallPreset(string presetId)

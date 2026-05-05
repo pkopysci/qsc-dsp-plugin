@@ -40,6 +40,7 @@ internal sealed class EcpConnectionManager : IDisposable
     private readonly ReconnectStrategy _reconnect;
     private readonly ThreadCensus _threadCensus;
     private readonly Func<EcpCredentials?> _credentialsSource;
+    private readonly Action? _postAuthHook;
 
     private readonly object _stateLock = new();
     private ConnectionState _state = ConnectionState.Disconnected;
@@ -63,6 +64,7 @@ internal sealed class EcpConnectionManager : IDisposable
     /// <param name="dispatcher">The inbound dispatcher.</param>
     /// <param name="credentialsSource">Lookup of <see cref="EcpCredentials"/> at login time. Returns null for anonymous Cores.</param>
     /// <param name="threadCensus">Optional census; one is created internally if omitted.</param>
+    /// <param name="postAuthHook">Optional callback invoked once per connect cycle, after auth completes and the queue is accepting (M-ECP-part-3 wires <c>EcpHydrateAction</c> here).</param>
     /// <exception cref="ArgumentNullException">If any required argument is null.</exception>
     public EcpConnectionManager(
         string deviceId,
@@ -71,7 +73,8 @@ internal sealed class EcpConnectionManager : IDisposable
         EcpCommandQueue queue,
         EcpDispatcher dispatcher,
         Func<EcpCredentials?> credentialsSource,
-        ThreadCensus? threadCensus = null)
+        ThreadCensus? threadCensus = null,
+        Action? postAuthHook = null)
     {
         ArgumentNullException.ThrowIfNull(deviceId);
         ArgumentNullException.ThrowIfNull(transport);
@@ -86,6 +89,7 @@ internal sealed class EcpConnectionManager : IDisposable
         _queue = queue;
         _dispatcher = dispatcher;
         _credentialsSource = credentialsSource;
+        _postAuthHook = postAuthHook;
         _threadCensus = threadCensus ?? new ThreadCensus(deviceId);
     }
 
@@ -285,6 +289,7 @@ internal sealed class EcpConnectionManager : IDisposable
 
                     TransitionTo(ConnectionState.Connected, "transport up + auth complete");
                     _queue.StartAccepting();
+                    _postAuthHook?.Invoke();
 
                     await WaitForFaultOrDisconnectAsync(cancellationToken).ConfigureAwait(false);
                 }

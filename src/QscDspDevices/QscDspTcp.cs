@@ -96,6 +96,9 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
     private QscDspDevices.AudioControl.Ecp.EcpAudioRoutingService? _ecpRouting;
     private QscDspDevices.AudioControl.Ecp.EcpAudioZoneEnableService? _ecpZones;
     private QscDspDevices.LogicTriggers.Ecp.EcpLogicTriggerService? _ecpTriggers;
+    private QscDspDevices.Connectivity.Ecp.EcpAutoPollSubscription? _ecpAutoPoll;
+    private QscDspDevices.Connectivity.Ecp.EcpRedundantConnectionPair? _ecpRedundantPair;
+    private QscDspDevices.Connectivity.Ecp.EcpRoutingCommandQueue? _ecpRoutingQueue;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="QscDspTcp"/> class
@@ -321,6 +324,20 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
                 return;
             }
 
+            // M-ECP-part-3: lazy-build the redundant pair if a backup
+            // was configured via SetBackupDeviceConnection and we
+            // haven't built it yet.
+            if (_backupHostname is not null && _ecpRedundantPair is null)
+            {
+                BuildEcpRedundantPair();
+            }
+
+            if (_ecpRedundantPair is not null)
+            {
+                _ecpRedundantPair.Connect();
+                return;
+            }
+
             _ecpConnection.Connect();
             return;
         }
@@ -360,6 +377,12 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
 
         if (_useEcp)
         {
+            if (_ecpRedundantPair is not null)
+            {
+                _ecpRedundantPair.Disconnect();
+                return;
+            }
+
             _ecpConnection?.Disconnect();
             return;
         }
@@ -661,12 +684,16 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
 
         if (_useEcp)
         {
-            // ECP redundancy is implemented via sg-poll on each side
-            // (see slice 8); the M6 RedundantConnectionPair coordinator
-            // does not yet plug into the EcpConnectionManager. For
-            // M-ECP-part-2, refuse with a Logger.Notice and document
-            // the gap; the integrator falls back to manual failover.
-            Log.Notice(string.IsNullOrEmpty(Id) ? "QscDspTcp" : Id, $"Redundant pair under ECP is not yet wired; backup '{hostname}:{port}' ignored. Tracked as M-ECP-part-3.");
+            // M-ECP-part-3: same-protocol ECP pairs are now constructed.
+            // Stash the backup config; the pair is built lazily on the
+            // next Connect() call (mirrors the QRC path).
+            _backupHostname = hostname;
+            _backupPort = port;
+            if (!string.IsNullOrEmpty(Id))
+            {
+                Log.Notice(Id, $"ECP backup device configured: {hostname}:{port}. Pair will be constructed on next Connect.");
+            }
+
             return;
         }
 
@@ -737,6 +764,9 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
                 _ecpConnection.Dispose();
             }
 
+            _ecpAutoPoll?.Dispose();
+            _ecpRedundantPair?.Dispose();
+            _ecpRoutingQueue?.Dispose();
             _ecpQueue?.Dispose();
         }
     }
@@ -767,6 +797,20 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
             ? null
             : new QscDspDevices.Connectivity.Ecp.EcpCredentials(username ?? string.Empty, password ?? string.Empty);
 
+        var scaler = new LevelScaler(hostId);
+        var audio = new QscDspDevices.AudioControl.Ecp.EcpAudioControlService(hostId, _registry, scaler, queue);
+        var routing = new QscDspDevices.AudioControl.Ecp.EcpAudioRoutingService(hostId, _registry, queue);
+        var zones = new QscDspDevices.AudioControl.Ecp.EcpAudioZoneEnableService(hostId, _zoneRegistry, queue);
+        var triggers = new QscDspDevices.LogicTriggers.Ecp.EcpLogicTriggerService(hostId, _triggerRegistry, queue);
+
+        // Hydrate is the post-auth hook on the connection manager; it
+        // emits cgc + cga + cgsna once auth completes and the queue is
+        // accepting. Subscribe wires the inbound cv stream to the
+        // service tier so cache reads reflect the Core's authoritative
+        // values (M-ECP-part-3 §1 + §2).
+        var hydrate = new Connectivity.Ecp.EcpHydrateAction(hostId, queue, _registry, _zoneRegistry, _triggerRegistry);
+        var subscription = new Connectivity.Ecp.EcpAutoPollSubscription(hostId, dispatcher, _registry, _zoneRegistry, _triggerRegistry, audio, routing, zones, triggers);
+
         var connection = new QscDspDevices.Connectivity.Ecp.EcpConnectionManager(
             hostId,
             transport,
@@ -774,15 +818,10 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
             queue,
             dispatcher,
             credentialsSource: () => creds,
-            threadCensus: _threadCensus);
+            threadCensus: _threadCensus,
+            postAuthHook: hydrate.Run);
 
         connection.StateChanged += OnEcpStateChanged;
-
-        var scaler = new LevelScaler(hostId);
-        var audio = new QscDspDevices.AudioControl.Ecp.EcpAudioControlService(hostId, _registry, scaler, queue);
-        var routing = new QscDspDevices.AudioControl.Ecp.EcpAudioRoutingService(hostId, _registry, queue);
-        var zones = new QscDspDevices.AudioControl.Ecp.EcpAudioZoneEnableService(hostId, _zoneRegistry, queue);
-        var triggers = new QscDspDevices.LogicTriggers.Ecp.EcpLogicTriggerService(hostId, _triggerRegistry, queue);
 
         audio.AudioInputLevelChanged += (_, args) => AudioInputLevelChanged?.Invoke(this, args);
         audio.AudioInputMuteChanged += (_, args) => AudioInputMuteChanged?.Invoke(this, args);
@@ -790,6 +829,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         audio.AudioOutputMuteChanged += (_, args) => AudioOutputMuteChanged?.Invoke(this, args);
         routing.RouteChanged += (_, args) => AudioRouteChanged?.Invoke(this, args);
         zones.ZoneEnableChanged += (_, args) => AudioZoneEnableChanged?.Invoke(this, args);
+        triggers.LogicTriggerStateChanged += (_, args) => DspLogicTriggerStateChanged?.Invoke(this, args);
 
         _transport = transport;
         _ecpConnection = connection;
@@ -798,6 +838,7 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
         _ecpRouting = routing;
         _ecpZones = zones;
         _ecpTriggers = triggers;
+        _ecpAutoPoll = subscription;
         _primaryHostname = hostname;
         _primaryPort = port;
     }
@@ -961,6 +1002,52 @@ public class QscDspTcp : BaseDevice, IDsp, IAudioRoutable, IAudioZoneEnabler, ID
 
         _redundantPair = pair;
         Log.Notice(Id, $"Redundant pair built: primary={_primaryHostname}:{_primaryPort}, backup={_backupHostname}:{_backupPort}.");
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "BuildEcpRedundantPair takes ownership of the new EcpConnectionManager + transport via the pair, which disposes them on Pair.Dispose. The local goes out of scope after the pair captures the reference; CA2000 cannot see the ownership transfer.")]
+    private void BuildEcpRedundantPair()
+    {
+        if (_ecpConnection is null || _ecpQueue is null || _backupHostname is null)
+        {
+            return;
+        }
+
+        // Build a second ECP stack for the backup. Hydrate + service
+        // tier are wired against the primary's registries — both sides
+        // share the same control catalog.
+        IConnectionTransport backupTransport = BuildTransport(_backupHostname, _backupPort);
+        var backupQueue = new Connectivity.Ecp.EcpCommandQueue(Id);
+        var backupDispatcher = new Protocol.Ecp.EcpDispatcher(Id);
+
+        var backupConnection = new Connectivity.Ecp.EcpConnectionManager(
+            Id,
+            backupTransport,
+            new ReconnectStrategy(_clock),
+            backupQueue,
+            backupDispatcher,
+            credentialsSource: () => null,
+            threadCensus: _threadCensus);
+
+        // Re-point the routing facade so the service tier writes go
+        // through whichever side the pair coordinator has elected.
+        var routingQueue = new Connectivity.Ecp.EcpRoutingCommandQueue(Id);
+
+        var pair = new Connectivity.Ecp.EcpRedundantConnectionPair(
+            Id,
+            _ecpConnection,
+            backupConnection,
+            routingQueue,
+            QscDspDevices.Connectivity.Redundancy.SwitchbackPolicy.Default);
+
+        pair.RedundancyStateChanged += (_, args) => RedundancyStateChanged?.Invoke(this, args);
+        pair.BackupDeviceConnectionChanged += (_, args) => BackupDeviceConnectionChanged?.Invoke(this, args);
+
+        _ecpRedundantPair = pair;
+        _ecpRoutingQueue = routingQueue;
+        Log.Notice(Id, $"ECP redundant pair built: primary={_primaryHostname}:{_primaryPort}, backup={_backupHostname}:{_backupPort}.");
     }
 
     private sealed record ConnectionResources(

@@ -72,13 +72,15 @@ public sealed class QscDspTcpEcpTests
     }
 
     [Fact]
-    public void SetBackupDeviceConnection_same_protocol_ECP_pair_is_refused_pending_part_3()
+    public void SetBackupDeviceConnection_same_protocol_ECP_pair_is_constructed()
     {
+        // M-ECP-part-3: same-protocol ECP pairs are now built rather
+        // than refused with Logger.Notice (the part-2 deferral).
         using var sut = new TestableEcpQscDspTcp(new DeterministicClock());
         sut.Initialize("dsp-1", 0, "127.0.0.1", 1702, string.Empty, string.Empty);
 
         sut.SetBackupDeviceConnection("127.0.0.2", 1702);
-        sut.BackupDeviceExists.Should().BeFalse();
+        sut.BackupDeviceExists.Should().BeTrue();
     }
 
     [Fact]

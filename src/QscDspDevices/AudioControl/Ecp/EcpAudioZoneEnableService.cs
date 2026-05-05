@@ -82,6 +82,20 @@ internal sealed class EcpAudioZoneEnableService
         return _cache.TryGetValue((channelId, zoneId), out bool cached) && cached;
     }
 
+    /// <summary>
+    /// Reconciles the optimistic zone-enable cache against an
+    /// inbound <c>cv</c> on the zone's control tag.
+    /// </summary>
+    /// <param name="channelId">The owning input channel id.</param>
+    /// <param name="zoneId">The zone id.</param>
+    /// <param name="enabled">The Core-reported value.</param>
+    public void OnInboundZone(string channelId, string zoneId, bool enabled)
+    {
+        ArgumentNullException.ThrowIfNull(channelId);
+        ArgumentNullException.ThrowIfNull(zoneId);
+        UpdateCacheAndRaise(channelId, zoneId, enabled);
+    }
+
     private void UpdateCacheAndRaise(string channelId, string zoneId, bool next)
     {
         _cache.TryGetValue((channelId, zoneId), out bool prior);

@@ -118,7 +118,7 @@ Public surface is identical. The plugin internally routes every call to either t
 | `RouteAudio` (named-control router) | ✅ | ✅ via `csv` on `routerTag` |
 | `SetAudioZoneEnable` (named zone control) | ✅ | ✅ via `css` |
 | `PulseDspLogicTrigger` | ✅ | ✅ via `ct` |
-| `SetBackupDeviceConnection` redundancy | ✅ EngineStatus push-based | ⚠ same-protocol pairs deferred to M-ECP-part-3 (sg-poll-based) |
+| `SetBackupDeviceConnection` redundancy | ✅ EngineStatus push-based | ✅ `sg`-poll-based (M-ECP-part-3) |
 
 Mixed-protocol pairs (one side QRC, the other ECP) are refused with `Logger.Error` per the `redundancy` capability spec.
 
@@ -126,7 +126,6 @@ Mixed-protocol pairs (one side QRC, the other ECP) are refused with `Logger.Erro
 
 - Mid-session `AddInputChannel` / `AddOutputChannel` / `AddPreset` subscribe-on-the-wire. Today the registry add is staged and applied at next hydration. Configuration before `Connect()` works as advertised.
 - Per-symbol `public` → `internal` reduction. The current public surface is wider than necessary because tests reference internals directly.
-- ECP redundant-pair via `sg`-polling (deferred to M-ECP-part-3).
 
 ## Filing issues
 

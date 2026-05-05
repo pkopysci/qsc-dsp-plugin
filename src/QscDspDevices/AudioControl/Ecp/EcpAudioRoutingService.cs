@@ -114,6 +114,27 @@ internal sealed class EcpAudioRoutingService
         return _cache.TryGetValue(outputId, out string? sourceId) ? sourceId : string.Empty;
     }
 
+    /// <summary>
+    /// Reconciles the optimistic route cache against an inbound
+    /// <c>cv</c> on a router tag. The Core's value is the source's
+    /// bank index; we look up the framework source id for it. A
+    /// value of 0 means "cleared".
+    /// </summary>
+    /// <param name="output">The registered output channel whose routerTag matched the inbound.</param>
+    /// <param name="bankIndex">The bank index reported by the Core.</param>
+    public void OnInboundRoute(AudioChannel output, int bankIndex)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+
+        string sourceId = string.Empty;
+        if (bankIndex > 0 && _registry.TryGetInputIdByBankIndex(bankIndex, out string? id) && id is not null)
+        {
+            sourceId = id;
+        }
+
+        UpdateCacheAndRaise(output.Id, sourceId);
+    }
+
     private void UpdateCacheAndRaise(string outputId, string sourceId)
     {
         _cache.TryGetValue(outputId, out string? prior);

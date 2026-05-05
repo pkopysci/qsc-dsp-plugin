@@ -20,7 +20,7 @@ namespace QscDspDevices.Connectivity.Ecp;
 /// strings (the wire text from <see cref="QscDspDevices.Protocol.Ecp.EcpCommand"/>);
 /// the framer appends the LF terminator before they hit the transport.
 /// </remarks>
-internal sealed class EcpCommandQueue : IDisposable
+internal class EcpCommandQueue : IDisposable
 {
     /// <summary>The default upper bound on outstanding commands.</summary>
     public const int DefaultCapacity = 1024;
@@ -128,7 +128,7 @@ internal sealed class EcpCommandQueue : IDisposable
     /// <param name="command">The command wire text.</param>
     /// <returns>True if enqueued.</returns>
     /// <exception cref="ArgumentNullException">If <paramref name="command"/> is null.</exception>
-    public bool TryEnqueue(string command)
+    public virtual bool TryEnqueue(string command)
     {
         ArgumentNullException.ThrowIfNull(command);
 

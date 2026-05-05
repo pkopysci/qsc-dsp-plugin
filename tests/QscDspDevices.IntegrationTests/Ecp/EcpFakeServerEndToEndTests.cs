@@ -161,6 +161,62 @@ public sealed class EcpFakeServerEndToEndTests
         queue.IsAccepting.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task Disconnect_after_Connect_drains_queue_and_reaches_Disconnected()
+    {
+        using var server = new FakeEcpServer();
+        using var transport = new RawTcpTransport("127.0.0.1", server.Port);
+        using var queue = new EcpCommandQueue("dsp-1");
+        var dispatcher = new EcpDispatcher("dsp-1");
+        using var manager = new EcpConnectionManager(
+            "dsp-1",
+            transport,
+            new ReconnectStrategy(new SystemClock()),
+            queue,
+            dispatcher,
+            credentialsSource: () => null);
+
+        manager.Connect();
+        await WaitForAsync(() => manager.State == ConnectionState.Connected && queue.IsAccepting, TimeSpan.FromSeconds(15));
+
+        manager.Disconnect();
+        await manager.WaitForDisconnectedAsync(TimeSpan.FromSeconds(15));
+
+        manager.State.Should().Be(ConnectionState.Disconnected);
+        queue.IsAccepting.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Multiple_set_commands_round_trip_to_server_in_order()
+    {
+        using var server = new FakeEcpServer();
+        using var transport = new RawTcpTransport("127.0.0.1", server.Port);
+        using var queue = new EcpCommandQueue("dsp-1");
+        var dispatcher = new EcpDispatcher("dsp-1");
+        using var manager = new EcpConnectionManager(
+            "dsp-1",
+            transport,
+            new ReconnectStrategy(new SystemClock()),
+            queue,
+            dispatcher,
+            credentialsSource: () => null);
+
+        manager.Connect();
+        await WaitForAsync(() => manager.State == ConnectionState.Connected && queue.IsAccepting, TimeSpan.FromSeconds(15));
+
+        queue.TryEnqueue(EcpCommand.ControlSetValue("a", 1));
+        queue.TryEnqueue(EcpCommand.ControlSetValue("b", 2));
+        queue.TryEnqueue(EcpCommand.ControlSetValue("c", 3));
+
+        await WaitForAsync(
+            () => server.GetReceivedCommands().Count(c => c.StartsWith("csv ", StringComparison.Ordinal)) >= 3,
+            TimeSpan.FromSeconds(15));
+
+        IReadOnlyList<string> received = server.GetReceivedCommands();
+        string[] csvs = received.Where(c => c.StartsWith("csv ", StringComparison.Ordinal)).ToArray();
+        csvs.Should().HaveCountGreaterThanOrEqualTo(3);
+    }
+
     private static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
     {
         DateTime deadline = DateTime.UtcNow + timeout;

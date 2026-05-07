@@ -77,14 +77,20 @@ public sealed class JsonRpcDispatcherTests
     }
 
     [Fact]
-    public void Unknown_id_is_logged_at_warn_and_dropped()
+    public void Unknown_id_is_logged_at_debug_and_dropped()
     {
+        // Issue #22: demoted from Warn to Debug — stale responses
+        // (e.g., late replies after a reconnect) are common and don't
+        // warrant a Warn entry.
         using var sink = new TestLoggerSink();
         var sut = new JsonRpcDispatcher("dsp-1");
 
         sut.Dispatch("""{"jsonrpc":"2.0","id":999,"result":{"ok":true}}""");
 
-        sink.ContainsWarnMatching("unknown id 999").Should().BeTrue();
+        sink.Captures.Should().Contain(e =>
+            e.Severity == gcu_common_utils.Logging.LogSeverity.Debug
+            && e.Message.Contains("unknown id 999", StringComparison.Ordinal));
+        sink.ContainsWarnMatching("unknown id 999").Should().BeFalse();
     }
 
     [Fact]

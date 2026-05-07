@@ -143,7 +143,7 @@ internal sealed class EcpAutoPollSubscription : IDisposable
 
         if (string.Equals(channel.LevelTag, tag, StringComparison.Ordinal))
         {
-            _audio.OnInboundLevel(channel, cv.Value);
+            _audio.OnInboundLevel(channel, cv.Value, cv.Position);
             return true;
         }
 

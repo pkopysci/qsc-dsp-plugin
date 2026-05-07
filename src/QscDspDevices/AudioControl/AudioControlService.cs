@@ -102,12 +102,19 @@ public sealed class AudioControlService
             return;
         }
 
-        double deviceValue = _scaler.ToDevice(level, channel!.LevelMin, channel.LevelMax, channelId);
+        // Issue #24: send Position (0.0–1.0) rather than Value so the
+        // Core natively maps the framework's 0–100 to the design-side
+        // configured range for that control. This eliminates the
+        // "LevelMin/LevelMax both 0 maps everything to 0" failure mode
+        // and the awkward dependence on the integrator providing
+        // accurate device-side limits at AddInputChannel time.
+        int clamped = Math.Clamp(level, LevelScaler.FrameworkMin, LevelScaler.FrameworkMax);
+        double position = (double)(clamped - LevelScaler.FrameworkMin) / (LevelScaler.FrameworkMax - LevelScaler.FrameworkMin);
         var request = new JsonRpcRequest
         {
             Id = _ids.Next(),
             Method = "Control.Set",
-            Params = new { Name = channel.LevelTag, Value = deviceValue },
+            Params = new { Name = channel!.LevelTag, Position = position },
         };
 
         // Optimistic-update: record the framework-side level so a subsequent
@@ -117,7 +124,7 @@ public sealed class AudioControlService
         // surface is the framework's authoritative intent and Get* must
         // reflect it. The next AutoPoll after reconnect reconciles cache
         // with the Core's actual state.
-        UpdateLevelCacheAndRaise(channel, Math.Clamp(level, LevelScaler.FrameworkMin, LevelScaler.FrameworkMax));
+        UpdateLevelCacheAndRaise(channel, clamped);
 
         // CommandQueue.TryEnqueue logs on its own when refusing; we do not
         // re-log here.

@@ -454,6 +454,12 @@ public sealed class ConnectionManager : IDisposable
         Justification = "Per README §\"Exception Handling\", the plugin must not crash the host. The rx-thread chain ultimately invokes user-code event handlers (IAudioControl, IAudioRoutable, IAudioZoneEnabler, IDspLogicTriggerSupport); a throw from any of those would otherwise escape into the BasicTcpClient rx callback. Log Error and continue.")]
     private void DispatchFrameSafely(string frame)
     {
+        // Per issue #22: raw inbound device strings logged at Debug so
+        // operators can wireshark-style inspect a session by enabling
+        // Debug. The framer has already split on the null terminator;
+        // each call carries one complete frame.
+        Log.Debug(_deviceId, $"<-- {frame}");
+
         try
         {
             _dispatcher.Dispatch(frame);
@@ -708,7 +714,7 @@ public sealed class ConnectionManager : IDisposable
 
         if (changed)
         {
-            Log.Notice(_deviceId, $"Connection state {from} -> {next} ({cause}).");
+            Log.Debug(_deviceId, $"Connection state {from} -> {next} ({cause}).");
             StateChanged?.Invoke(this, new GenericSingleEventArgs<ConnectionState>(next));
         }
     }

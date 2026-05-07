@@ -381,6 +381,10 @@ internal sealed class EcpConnectionManager : IDisposable
         {
             foreach (string frame in _framer.Append(args.Arg.Span))
             {
+                // Per issue #22: raw inbound device strings logged at
+                // Debug so operators can inspect a session.
+                Log.Debug(_deviceId, $"<-- {frame}");
+
                 try
                 {
                     _dispatcher.Dispatch(frame);

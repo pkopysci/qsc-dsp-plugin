@@ -33,7 +33,7 @@ public sealed class AudioControlServiceFanoutTests
         channels.RegisterOutput(new AudioChannel(
             "out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags, "mixer.out1.source"));
         channels.RegisterInput(new AudioChannel(
-            "mic1", "mic1.gain", "mic1.mute", -80, 0, true, 0, 5, NoTags));
+            "mic1", "mic1.gain", "mic1.mute", -80, 0, true, 5, 0, NoTags));
 
         var sut = new AudioControlServiceFanout(channels, zones, routing, zone, audio);
 
@@ -126,7 +126,7 @@ public sealed class AudioControlServiceFanoutTests
         var zones = new AudioZoneRegistry("dsp-1");
         var triggers = new LogicTriggerRegistry("dsp-1");
         channels.RegisterInput(new AudioChannel(
-            "mic1", "shared.tag", "mic1.mute", -80, 0, true, 0, 1, NoTags));
+            "mic1", "shared.tag", "mic1.mute", -80, 0, true, 1, 0, NoTags));
         triggers.Register("rec", "shared.tag");
 
         var ids = new IdGenerator();
@@ -161,7 +161,7 @@ public sealed class AudioControlServiceFanoutTests
         AudioRoutingService routing = env.Routing;
         AudioZoneEnableService zone = env.Zone;
         AudioControlService audio = env.Audio;
-        channels.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 0, 5, NoTags));
+        channels.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 5, 0, NoTags));
         channels.RegisterOutput(new AudioChannel(
             "out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags, "shared.tag"));
         zones.TryRegister("mic1", "zoneA", "shared.tag");

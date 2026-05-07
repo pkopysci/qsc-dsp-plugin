@@ -138,7 +138,7 @@ public sealed class LogonAction : IPostConnectAction
                 }
                 else
                 {
-                    Log.Notice(_deviceId, "Logon succeeded.");
+                    Log.Debug(_deviceId, "Logon succeeded.");
                     newCompletion.TrySetResult(true);
                 }
             }

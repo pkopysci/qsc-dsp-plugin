@@ -21,7 +21,7 @@ namespace QscDspDevices.AudioControl;
 /// Sibling of <see cref="AudioControlService"/>; the cache semantics
 /// are identical — see that type's "intent semantics" remarks. The
 /// bank-index ↔ channel-id translation is done via
-/// <see cref="AudioChannelRegistry.TryGetInputIdByBankIndex"/>.
+/// <see cref="AudioChannelRegistry.TryGetInputIdByRouterIndex"/>.
 /// </para>
 /// <para>
 /// <b>Cache semantics — intent, not state.</b> <see cref="Route"/> and
@@ -104,16 +104,18 @@ public sealed class AudioRoutingService
             return;
         }
 
-        // BankIndex 0 is the QSC "no source" sentinel (see Clear). A
-        // source registered with bankIndex <= 0 cannot be routed because
-        // it would clear the output instead. Reject explicitly so
-        // misconfigured inputs surface as Logger.Error rather than as
-        // a silent route-then-clear that disagrees with the cache.
-        if (source.BankIndex < 1)
+        // RouterIndex 0 is the QSC "no source" sentinel (see Clear). A
+        // source registered with routerIndex <= 0 cannot be routed
+        // because it would clear the output instead. Reject explicitly
+        // so misconfigured inputs surface as Logger.Error rather than
+        // as a silent route-then-clear that disagrees with the cache.
+        // Routing uses the input's RouterIndex per QSC's design;
+        // BankIndex is reserved for snapshot/preset addressing.
+        if (source.RouterIndex < 1)
         {
             Log.Error(
                 _deviceId,
-                $"RouteAudio('{sourceId}', '{outputId}') — source bankIndex {source.BankIndex} is invalid (must be >= 1; bankIndex 0 is the QSC 'cleared' sentinel).");
+                $"RouteAudio('{sourceId}', '{outputId}') — source routerIndex {source.RouterIndex} is invalid (must be >= 1; routerIndex 0 is the QSC 'cleared' sentinel).");
             return;
         }
 
@@ -121,7 +123,7 @@ public sealed class AudioRoutingService
         {
             Id = _ids.Next(),
             Method = "Control.Set",
-            Params = new { Name = output.RouterTag, Value = source.BankIndex },
+            Params = new { Name = output.RouterTag, Value = source.RouterIndex },
         };
 
         UpdateCacheAndRaise(outputId, sourceId);
@@ -194,10 +196,10 @@ public sealed class AudioRoutingService
             return;
         }
 
-        int bankIndex = ExtractInteger(delta);
-        string newSourceId = bankIndex == ClearedSourceValue
+        int routerIndex = ExtractInteger(delta);
+        string newSourceId = routerIndex == ClearedSourceValue
             ? string.Empty
-            : _registry.TryGetInputIdByBankIndex(bankIndex, out string? sourceId) && sourceId is not null
+            : _registry.TryGetInputIdByRouterIndex(routerIndex, out string? sourceId) && sourceId is not null
                 ? sourceId
                 : string.Empty;
 

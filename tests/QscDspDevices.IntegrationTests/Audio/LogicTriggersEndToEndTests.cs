@@ -105,7 +105,7 @@ public sealed class LogicTriggersEndToEndTests
             Dispatcher = new JsonRpcDispatcher("dsp-1");
 
             Channels = new AudioChannelRegistry("dsp-1");
-            Channels.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 0, 1, NoTags));
+            Channels.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 1, 0, NoTags));
 
             ZoneRegistry = new AudioZoneRegistry("dsp-1");
             TriggerRegistry = new LogicTriggerRegistry("dsp-1");

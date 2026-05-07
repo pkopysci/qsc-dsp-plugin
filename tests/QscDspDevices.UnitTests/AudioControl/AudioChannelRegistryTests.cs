@@ -150,29 +150,29 @@ public sealed class AudioChannelRegistryTests
     }
 
     [Fact]
-    public void TryGetInputIdByBankIndex_returns_the_owning_input_id()
+    public void TryGetInputIdByRouterIndex_returns_the_owning_input_id()
     {
         var sut = new AudioChannelRegistry("dsp-1");
-        sut.RegisterInput(new AudioChannel("mic1", "lvl1", "mute1", -80, 0, true, 0, 5, NoTags));
-        sut.RegisterInput(new AudioChannel("mic2", "lvl2", "mute2", -80, 0, true, 0, 7, NoTags));
+        sut.RegisterInput(new AudioChannel("mic1", "lvl1", "mute1", -80, 0, true, RouterIndex: 5, BankIndex: 0, NoTags));
+        sut.RegisterInput(new AudioChannel("mic2", "lvl2", "mute2", -80, 0, true, RouterIndex: 7, BankIndex: 0, NoTags));
 
-        sut.TryGetInputIdByBankIndex(5, out string? a).Should().BeTrue();
+        sut.TryGetInputIdByRouterIndex(5, out string? a).Should().BeTrue();
         a.Should().Be("mic1");
-        sut.TryGetInputIdByBankIndex(7, out string? b).Should().BeTrue();
+        sut.TryGetInputIdByRouterIndex(7, out string? b).Should().BeTrue();
         b.Should().Be("mic2");
-        sut.TryGetInputIdByBankIndex(99, out _).Should().BeFalse();
+        sut.TryGetInputIdByRouterIndex(99, out _).Should().BeFalse();
     }
 
     [Fact]
-    public void Re_registering_input_with_new_bankIndex_remaps_the_reverse_table()
+    public void Re_registering_input_with_new_routerIndex_remaps_the_reverse_table()
     {
         var sut = new AudioChannelRegistry("dsp-1");
-        sut.RegisterInput(new AudioChannel("mic1", "lvl", "mute", -80, 0, true, 0, 5, NoTags));
-        sut.RegisterInput(new AudioChannel("mic1", "lvl", "mute", -80, 0, true, 0, 9, NoTags));
+        sut.RegisterInput(new AudioChannel("mic1", "lvl", "mute", -80, 0, true, RouterIndex: 5, BankIndex: 0, NoTags));
+        sut.RegisterInput(new AudioChannel("mic1", "lvl", "mute", -80, 0, true, RouterIndex: 9, BankIndex: 0, NoTags));
 
-        // The old bank-index entry is gone; the new one points at mic1.
-        sut.TryGetInputIdByBankIndex(5, out _).Should().BeFalse();
-        sut.TryGetInputIdByBankIndex(9, out string? viaNew).Should().BeTrue();
+        // The old router-index entry is gone; the new one points at mic1.
+        sut.TryGetInputIdByRouterIndex(5, out _).Should().BeFalse();
+        sut.TryGetInputIdByRouterIndex(9, out string? viaNew).Should().BeTrue();
         viaNew.Should().Be("mic1");
     }
 
@@ -210,8 +210,8 @@ public sealed class AudioChannelRegistryTests
         // detection, AutoPoll deltas on this tag silently dispatch
         // to the wrong owner. Pin the warn-on-collision behaviour.
         var sut = new AudioChannelRegistry("dsp-1");
-        sut.RegisterInput(new AudioChannel("mic1", "shared.tag", "mic1.mute", -80, 0, true, 0, 1, NoTags));
-        sut.RegisterInput(new AudioChannel("mic2", "shared.tag", "mic2.mute", -80, 0, true, 0, 2, NoTags));
+        sut.RegisterInput(new AudioChannel("mic1", "shared.tag", "mic1.mute", -80, 0, true, 1, 0, NoTags));
+        sut.RegisterInput(new AudioChannel("mic2", "shared.tag", "mic2.mute", -80, 0, true, 2, 0, NoTags));
 
         // Reverse map last-writer-wins; mic2 owns the tag now.
         sut.TryGetChannelIdByTag("shared.tag", out string? owner).Should().BeTrue();

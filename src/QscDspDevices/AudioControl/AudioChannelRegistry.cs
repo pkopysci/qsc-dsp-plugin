@@ -25,7 +25,7 @@ public sealed class AudioChannelRegistry
     private readonly Dictionary<string, AudioChannel> _channels = new();
     private readonly Dictionary<string, AudioPreset> _presets = new();
     private readonly Dictionary<string, string> _tagToChannelId = new();
-    private readonly Dictionary<int, string> _inputBankIndexToChannelId = new();
+    private readonly Dictionary<int, string> _inputRouterIndexToChannelId = new();
     private readonly HashSet<string> _routerTags = new(StringComparer.Ordinal);
 
     /// <summary>
@@ -197,14 +197,14 @@ public sealed class AudioChannelRegistry
     /// the matrix mixer reports — the value is a bank index, and we
     /// need the framework channel id back.
     /// </summary>
-    /// <param name="bankIndex">The bank index to look up.</param>
+    /// <param name="routerIndex">The router index to look up.</param>
     /// <param name="channelId">The owning input channel id, if any.</param>
-    /// <returns><c>true</c> when an input has this bank index.</returns>
-    public bool TryGetInputIdByBankIndex(int bankIndex, out string? channelId)
+    /// <returns><c>true</c> when an input has this router index.</returns>
+    public bool TryGetInputIdByRouterIndex(int routerIndex, out string? channelId)
     {
         lock (_lock)
         {
-            return _inputBankIndexToChannelId.TryGetValue(bankIndex, out channelId);
+            return _inputRouterIndexToChannelId.TryGetValue(routerIndex, out channelId);
         }
     }
 
@@ -227,6 +227,20 @@ public sealed class AudioChannelRegistry
 
     private void Register(AudioChannel channel)
     {
+        // Issue #24: when LevelMin and LevelMax are both 0 (unset by
+        // the integrator), default to 0–100 so a Position-based Set
+        // and the LevelScaler.ToFramework fallback both produce
+        // sensible values. The AddX framework calls accept these as
+        // documented "0–100 representation limits".
+        if (channel.LevelMin == 0 && channel.LevelMax == 0)
+        {
+            channel = channel with
+            {
+                LevelMin = 0,
+                LevelMax = 100
+            };
+        }
+
         lock (_lock)
         {
             if (_channels.TryGetValue(channel.Id, out AudioChannel? existing))
@@ -241,7 +255,7 @@ public sealed class AudioChannelRegistry
                     // re-register with a new bankIndex on a config refresh,
                     // and the routing service must not see two ids claim
                     // the same bank.
-                    _inputBankIndexToChannelId.Remove(existing.BankIndex);
+                    _inputRouterIndexToChannelId.Remove(existing.RouterIndex);
                 }
                 else
                 {
@@ -265,7 +279,7 @@ public sealed class AudioChannelRegistry
 
             if (channel.IsInput)
             {
-                _inputBankIndexToChannelId[channel.BankIndex] = channel.Id;
+                _inputRouterIndexToChannelId[channel.RouterIndex] = channel.Id;
             }
             else if (!string.IsNullOrEmpty(channel.RouterTag))
             {

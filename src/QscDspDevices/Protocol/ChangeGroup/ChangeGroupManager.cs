@@ -271,13 +271,16 @@ public sealed class ChangeGroupManager : IAutoPollSubscription
             return;
         }
 
-        if (response.Result is not JToken result)
+        // The Result shape is `{ Id: "...", Changes: [...] }`. Indexing
+        // into a JValue (e.g., a string or number Result) throws
+        // InvalidOperationException — guard via a JObject type check
+        // so a malformed AutoPoll response doesn't crash the receive
+        // thread (#23).
+        if (response.Result is not JObject result)
         {
             return;
         }
 
-        // The Result shape is `{ Id: "...", Changes: [...] }`. The
-        // Changes array is what carries per-control deltas.
         if (result["Changes"] is not JArray changes)
         {
             return;

@@ -74,13 +74,13 @@ internal sealed class EcpAudioRoutingService
             return;
         }
 
-        if (source.BankIndex < 1)
+        if (source.RouterIndex < 1)
         {
-            Log.Error(_deviceId, $"ECP Route('{sourceId}', '{outputId}') — source bankIndex {source.BankIndex} invalid (must be ≥ 1).");
+            Log.Error(_deviceId, $"ECP Route('{sourceId}', '{outputId}') — source routerIndex {source.RouterIndex} invalid (must be ≥ 1).");
             return;
         }
 
-        _queue.TryEnqueue(EcpCommand.ControlSetValue(output.RouterTag, source.BankIndex));
+        _queue.TryEnqueue(EcpCommand.ControlSetValue(output.RouterTag, source.RouterIndex));
         UpdateCacheAndRaise(outputId, sourceId);
     }
 
@@ -117,17 +117,17 @@ internal sealed class EcpAudioRoutingService
     /// <summary>
     /// Reconciles the optimistic route cache against an inbound
     /// <c>cv</c> on a router tag. The Core's value is the source's
-    /// bank index; we look up the framework source id for it. A
+    /// router index; we look up the framework source id for it. A
     /// value of 0 means "cleared".
     /// </summary>
     /// <param name="output">The registered output channel whose routerTag matched the inbound.</param>
-    /// <param name="bankIndex">The bank index reported by the Core.</param>
-    public void OnInboundRoute(AudioChannel output, int bankIndex)
+    /// <param name="routerIndex">The router index reported by the Core.</param>
+    public void OnInboundRoute(AudioChannel output, int routerIndex)
     {
         ArgumentNullException.ThrowIfNull(output);
 
         string sourceId = string.Empty;
-        if (bankIndex > 0 && _registry.TryGetInputIdByBankIndex(bankIndex, out string? id) && id is not null)
+        if (routerIndex > 0 && _registry.TryGetInputIdByRouterIndex(routerIndex, out string? id) && id is not null)
         {
             sourceId = id;
         }

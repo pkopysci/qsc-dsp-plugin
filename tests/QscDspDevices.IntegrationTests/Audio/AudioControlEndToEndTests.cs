@@ -60,7 +60,9 @@ public sealed class AudioControlEndToEndTests
         controlSet.Method.Should().Be("Control.Set");
         var p = (JObject)controlSet.Params!;
         p["Name"]!.ToString().Should().Be("mic1.gain");
-        p["Value"]!.ToObject<double>().Should().BeApproximately(-40.0, 1e-9);
+
+        // Issue #24: Position-based Set (0.5 for framework 50/100).
+        p["Position"]!.ToObject<double>().Should().BeApproximately(0.5, 1e-9);
     }
 
     [Fact]

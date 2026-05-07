@@ -22,8 +22,11 @@ public sealed class AudioControlServiceTests
     private static readonly IReadOnlyList<string> NoTags = Array.Empty<string>();
 
     [Fact]
-    public void SetLevel_for_known_input_enqueues_Control_Set_with_scaled_Value()
+    public void SetLevel_for_known_input_enqueues_Control_Set_with_Position()
     {
+        // Issue #24: framework 0–100 sent as Position (0.0–1.0) so the
+        // Core natively maps to the design's configured range — no
+        // dependence on integrator-supplied LevelMin/LevelMax.
         using CommandQueue queue = NewQueue();
         var registry = new AudioChannelRegistry("dsp-1");
         var sut = new AudioControlService("dsp-1", registry, new LevelScaler("dsp-1"), queue, new IdGenerator());
@@ -36,7 +39,7 @@ public sealed class AudioControlServiceTests
         sent[0].Method.Should().Be("Control.Set");
         var p = JObject.FromObject(sent[0].Params!);
         p["Name"]!.ToString().Should().Be("mic1.gain");
-        p["Value"]!.ToObject<double>().Should().BeApproximately(-40.0, 1e-9);
+        p["Position"]!.ToObject<double>().Should().BeApproximately(0.5, 1e-9);
     }
 
     [Fact]

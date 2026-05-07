@@ -11,8 +11,10 @@ namespace QscDspDevices.UnitTests.AudioControl.Ecp;
 public sealed class EcpAudioControlServiceTests
 {
     [Fact]
-    public void SetLevel_emits_csv_against_the_named_level_tag()
+    public void SetLevel_emits_csp_with_position_against_the_named_level_tag()
     {
+        // Issue #24: framework 0–100 sent as Position (csp) so the
+        // Core natively maps to the design's configured range.
         const string deviceId = "dsp-1";
         var registry = new AudioChannelRegistry(deviceId);
         registry.RegisterOutput(new AudioChannel("out1", "Output.gain", "Output.mute", LevelMin: -100, LevelMax: 0, IsInput: false, RouterIndex: 0, BankIndex: 0, Tags: Array.Empty<string>(), RouterTag: string.Empty));
@@ -24,8 +26,7 @@ public sealed class EcpAudioControlServiceTests
         sut.SetLevel("out1", 50);
 
         IReadOnlyList<string> commands = queue.SnapshotPending();
-        commands.Should().HaveCount(1);
-        commands[0].Should().StartWith("csv \"Output.gain\" ");
+        commands.Should().Equal("csp \"Output.gain\" 0.5");
     }
 
     [Fact]

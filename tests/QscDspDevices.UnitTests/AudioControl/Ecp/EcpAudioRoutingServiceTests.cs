@@ -15,7 +15,7 @@ public sealed class EcpAudioRoutingServiceTests
     {
         const string deviceId = "dsp-1";
         var registry = new AudioChannelRegistry(deviceId);
-        registry.RegisterInput(new AudioChannel("in1", "L", "M", -100, 0, true, 0, BankIndex: 3, Array.Empty<string>()));
+        registry.RegisterInput(new AudioChannel("in1", "L", "M", -100, 0, true, RouterIndex: 3, BankIndex: 0, Array.Empty<string>()));
         registry.RegisterOutput(new AudioChannel("out1", "L", "M", -100, 0, false, 0, 0, Array.Empty<string>(), RouterTag: "Mixer.input.1.gain"));
         using var queue = new EcpCommandQueue(deviceId);
         queue.StartAccepting();
@@ -83,7 +83,7 @@ public sealed class EcpAudioRoutingServiceTests
     }
 
     [Fact]
-    public void Route_with_zero_bankIndex_source_logs_error_and_does_not_enqueue()
+    public void Route_with_zero_routerIndex_source_logs_error_and_does_not_enqueue()
     {
         const string deviceId = "dsp-1";
         var registry = new AudioChannelRegistry(deviceId);
@@ -103,7 +103,7 @@ public sealed class EcpAudioRoutingServiceTests
     {
         const string deviceId = "dsp-1";
         var registry = new AudioChannelRegistry(deviceId);
-        registry.RegisterInput(new AudioChannel("in1", "L", "M", -100, 0, true, 0, BankIndex: 3, Array.Empty<string>()));
+        registry.RegisterInput(new AudioChannel("in1", "L", "M", -100, 0, true, RouterIndex: 3, BankIndex: 0, Array.Empty<string>()));
         registry.RegisterOutput(new AudioChannel("out1", "L", "M", -100, 0, false, 0, 0, Array.Empty<string>(), RouterTag: "tag"));
         using var queue = new EcpCommandQueue(deviceId);
         queue.StartAccepting();

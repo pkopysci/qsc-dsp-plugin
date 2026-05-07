@@ -21,7 +21,7 @@ type QscDspDevices.AudioControl.AudioChannelRegistry
   method Boolean IsRouterTag(String)
   method Boolean TryGetChannel(String,AudioChannel&)
   method Boolean TryGetChannelIdByTag(String,String&)
-  method Boolean TryGetInputIdByBankIndex(Int32,String&)
+  method Boolean TryGetInputIdByRouterIndex(Int32,String&)
   method Boolean TryGetPreset(String,AudioPreset&)
   method IReadOnlyList`1 GetAllChannels()
   method IReadOnlyList`1 GetInputIds()

@@ -25,7 +25,7 @@ public sealed class AudioRoutingServiceTests
     {
         using CommandQueue queue = NewQueue();
         var registry = new AudioChannelRegistry("dsp-1");
-        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 0, 3, NoTags));
+        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 3, 0, NoTags));
         registry.RegisterOutput(new AudioChannel("out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags, "mixer.out1.source"));
         var sut = new AudioRoutingService("dsp-1", registry, queue, new IdGenerator());
 
@@ -44,7 +44,7 @@ public sealed class AudioRoutingServiceTests
     {
         using CommandQueue queue = NewQueue();
         var registry = new AudioChannelRegistry("dsp-1");
-        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 0, 3, NoTags));
+        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 3, 0, NoTags));
         registry.RegisterOutput(new AudioChannel("out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags, "mixer.out1.source"));
         var sut = new AudioRoutingService("dsp-1", registry, queue, new IdGenerator());
 
@@ -58,7 +58,7 @@ public sealed class AudioRoutingServiceTests
     {
         using CommandQueue queue = NewQueue();
         var registry = new AudioChannelRegistry("dsp-1");
-        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 0, 3, NoTags));
+        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 3, 0, NoTags));
         registry.RegisterOutput(new AudioChannel("out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags, "mixer.out1.source"));
         var sut = new AudioRoutingService("dsp-1", registry, queue, new IdGenerator());
 
@@ -85,7 +85,7 @@ public sealed class AudioRoutingServiceTests
     {
         using CommandQueue queue = NewQueue();
         var registry = new AudioChannelRegistry("dsp-1");
-        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 0, 3, NoTags));
+        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 3, 0, NoTags));
         var sut = new AudioRoutingService("dsp-1", registry, queue, new IdGenerator());
 
         sut.Route("mic1", "nope");
@@ -111,7 +111,7 @@ public sealed class AudioRoutingServiceTests
     {
         using CommandQueue queue = NewQueue();
         var registry = new AudioChannelRegistry("dsp-1");
-        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 0, 3, NoTags));
+        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 3, 0, NoTags));
         registry.RegisterOutput(new AudioChannel("out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags, string.Empty));
         var sut = new AudioRoutingService("dsp-1", registry, queue, new IdGenerator());
 
@@ -125,8 +125,8 @@ public sealed class AudioRoutingServiceTests
     {
         using CommandQueue queue = NewQueue();
         var registry = new AudioChannelRegistry("dsp-1");
-        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 0, 3, NoTags));
-        registry.RegisterInput(new AudioChannel("mic2", "mic2.gain", "mic2.mute", -80, 0, true, 0, 5, NoTags));
+        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 3, 0, NoTags));
+        registry.RegisterInput(new AudioChannel("mic2", "mic2.gain", "mic2.mute", -80, 0, true, 5, 0, NoTags));
         registry.RegisterOutput(new AudioChannel("out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags, "mixer.out1.source"));
         var sut = new AudioRoutingService("dsp-1", registry, queue, new IdGenerator());
 
@@ -144,7 +144,7 @@ public sealed class AudioRoutingServiceTests
     {
         using CommandQueue queue = NewQueue();
         var registry = new AudioChannelRegistry("dsp-1");
-        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 0, 3, NoTags));
+        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 3, 0, NoTags));
         registry.RegisterOutput(new AudioChannel("out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags, "mixer.out1.source"));
         var sut = new AudioRoutingService("dsp-1", registry, queue, new IdGenerator());
         sut.Route("mic1", "out1"); // populates cache
@@ -159,7 +159,7 @@ public sealed class AudioRoutingServiceTests
     {
         using CommandQueue queue = NewQueue();
         var registry = new AudioChannelRegistry("dsp-1");
-        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 0, 3, NoTags));
+        registry.RegisterInput(new AudioChannel("mic1", "mic1.gain", "mic1.mute", -80, 0, true, 3, 0, NoTags));
         registry.RegisterOutput(new AudioChannel("out1", "out1.gain", "out1.mute", -100, 0, false, 0, 0, NoTags, "mixer.out1.source"));
         var sut = new AudioRoutingService("dsp-1", registry, queue, new IdGenerator());
 

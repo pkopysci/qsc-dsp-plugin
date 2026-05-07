@@ -54,7 +54,7 @@ public sealed class EcpAutoPollSubscriptionTests
     {
         const string deviceId = "dsp-1";
         var channels = new AudioChannelRegistry(deviceId);
-        channels.RegisterInput(new AudioChannel("in1", "In.gain", "In.mute", -100, 0, true, 0, 1, Array.Empty<string>()));
+        channels.RegisterInput(new AudioChannel("in1", "In.gain", "In.mute", -100, 0, true, 1, 0, Array.Empty<string>()));
         var zones = new AudioZoneRegistry(deviceId);
         var triggers = new LogicTriggerRegistry(deviceId);
         using var queue = new EcpCommandQueue(deviceId);

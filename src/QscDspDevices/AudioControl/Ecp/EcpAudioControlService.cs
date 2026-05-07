@@ -69,10 +69,13 @@ internal sealed class EcpAudioControlService
             return;
         }
 
-        double deviceValue = _scaler.ToDevice(level, channel!.LevelMin, channel.LevelMax, channelId);
-        _queue.TryEnqueue(EcpCommand.ControlSetValue(channel.LevelTag, deviceValue));
-
+        // Issue #24: send csp (set position) so the Core maps the
+        // framework's 0–100 to the design's configured range. This
+        // bypasses the LevelMin/LevelMax both-zero failure mode and
+        // matches the QRC service tier's M-fix to use Position.
         int clamped = Math.Clamp(level, LevelScaler.FrameworkMin, LevelScaler.FrameworkMax);
+        double position = (double)(clamped - LevelScaler.FrameworkMin) / (LevelScaler.FrameworkMax - LevelScaler.FrameworkMin);
+        _queue.TryEnqueue(EcpCommand.ControlSetPosition(channel!.LevelTag, position));
         if (_levelCache.TryGetValue(channelId, out int prior) && prior == clamped)
         {
             return;
@@ -141,17 +144,33 @@ internal sealed class EcpAudioControlService
 
     /// <summary>
     /// Reconciles the optimistic level cache against an inbound
-    /// <c>cv</c> from the AutoPoll bridge. If the Core's value
-    /// disagrees with the optimistic cache, the cache is corrected
-    /// and <see cref="AudioInputLevelChanged"/> /
-    /// <see cref="AudioOutputLevelChanged"/> is re-fired.
+    /// <c>cv</c> from the AutoPoll bridge. Prefers the Core-supplied
+    /// <paramref name="position"/> (already in 0–1 normalized to the
+    /// design's configured range) when it's a sensible value;
+    /// otherwise scales <paramref name="rawValue"/> through the
+    /// channel's LevelMin/LevelMax. The cache is corrected and the
+    /// matching <c>AudioInput/OutputLevelChanged</c> event re-fires.
     /// </summary>
     /// <param name="channel">The registered channel matching the inbound tag.</param>
     /// <param name="rawValue">The numeric value from the <c>cv</c> response.</param>
-    public void OnInboundLevel(AudioChannel channel, double rawValue)
+    /// <param name="position">The position (0–1) field from the <c>cv</c> response.</param>
+    public void OnInboundLevel(AudioChannel channel, double rawValue, double position)
     {
         ArgumentNullException.ThrowIfNull(channel);
-        int frameworkValue = LevelScaler.ToFramework(rawValue, channel.LevelMin, channel.LevelMax);
+
+        // Prefer position (0–1, design-normalized by the Core) when
+        // it's in range; this is robust to LevelMin/LevelMax being
+        // unset (issue #24). Fall back to value-with-scaler otherwise.
+        int frameworkValue;
+        if (position is >= 0 and <= 1)
+        {
+            frameworkValue = (int)Math.Round((position * (LevelScaler.FrameworkMax - LevelScaler.FrameworkMin)) + LevelScaler.FrameworkMin);
+        }
+        else
+        {
+            frameworkValue = LevelScaler.ToFramework(rawValue, channel.LevelMin, channel.LevelMax);
+        }
+
         if (_levelCache.TryGetValue(channel.Id, out int prior) && prior == frameworkValue)
         {
             return;

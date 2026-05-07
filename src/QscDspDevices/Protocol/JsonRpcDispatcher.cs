@@ -209,7 +209,10 @@ public sealed class JsonRpcDispatcher
             return;
         }
 
-        Log.Warn(_deviceId, $"Inbound JSON-RPC response carries unknown id {id}; discarding.");
+        // Demoted from Warn to Debug per issue #22: stale responses
+        // (e.g., late replies after a reconnect) are common and don't
+        // warrant cluttering the operator's log.
+        Log.Debug(_deviceId, $"Inbound JSON-RPC response carries unknown id {id}; discarding.");
     }
 
     /// <summary>

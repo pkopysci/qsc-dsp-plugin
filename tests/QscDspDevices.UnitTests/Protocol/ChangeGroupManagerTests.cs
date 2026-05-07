@@ -206,4 +206,24 @@ public sealed class ChangeGroupManagerTests
         sut.GetSubscribedControls(ChangeGroupManager.PluginGroupId).Should().BeEquivalentTo(ExpectedAB);
         sut.GetSubscribedControls("unknown").Should().BeEmpty();
     }
+
+    [Fact]
+    public void HandleAutoPollPush_with_scalar_JValue_Result_does_not_throw()
+    {
+        // Issue #23: a Result that arrives as a JSON scalar (e.g. a
+        // string or number) instead of the expected `{Changes:[...]}`
+        // object used to throw InvalidOperationException ("Cannot
+        // access child value on JValue") and crash the receive
+        // thread, which silently broke unsolicited-feedback delivery
+        // (#21). The manager must drop the malformed push silently.
+        var sut = new ChangeGroupManager("dsp-1", new IdGenerator());
+        int deltas = 0;
+        sut.SetDeltaCallback(_ => deltas++);
+
+        var scalar = new JsonRpcResponse { Id = 1, Result = JValue.CreateString("oops") };
+        Action act = () => sut.HandleAutoPollPush(scalar);
+
+        act.Should().NotThrow();
+        deltas.Should().Be(0);
+    }
 }

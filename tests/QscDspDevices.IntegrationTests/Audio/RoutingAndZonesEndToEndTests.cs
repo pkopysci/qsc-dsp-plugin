@@ -138,7 +138,7 @@ public sealed class RoutingAndZonesEndToEndTests
             // One input registered with a known bankIndex so RouteAudio
             // resolves cleanly.
             Registry.RegisterInput(new AudioChannel(
-                "mic1", "mic1.gain", "mic1.mute", -80, 0, true, 0, 3, NoTags));
+                "mic1", "mic1.gain", "mic1.mute", -80, 0, true, 3, 0, NoTags));
 
             for (int i = 0; i < routedOutputCount; i++)
             {

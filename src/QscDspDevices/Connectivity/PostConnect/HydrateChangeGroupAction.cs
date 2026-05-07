@@ -214,7 +214,7 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
             return;
         }
 
-        Log.Notice(_deviceId, $"Change group '{ChangeGroupManager.PluginGroupId}' subscribed ({subscribed} controls) at {ChangeGroupManager.DefaultAutoPollSeconds * 1000:0}ms AutoPoll.");
+        Log.Debug(_deviceId, $"Change group '{ChangeGroupManager.PluginGroupId}' subscribed ({subscribed} controls) at {ChangeGroupManager.DefaultAutoPollSeconds * 1000:0}ms AutoPoll.");
     }
 
     private bool TrySubscribe(string controlName, string ownerDescription)

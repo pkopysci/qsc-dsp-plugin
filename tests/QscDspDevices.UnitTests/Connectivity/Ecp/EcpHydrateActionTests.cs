@@ -44,7 +44,7 @@ public sealed class EcpHydrateActionTests
         const string deviceId = "dsp-1";
         var channels = new AudioChannelRegistry(deviceId);
         channels.RegisterOutput(new AudioChannel("out1", "Out.gain", "Out.mute", -100, 0, false, 0, 0, Array.Empty<string>(), RouterTag: "Router.tag"));
-        channels.RegisterInput(new AudioChannel("in1", "In.gain", "In.mute", -100, 0, true, 0, 1, Array.Empty<string>()));
+        channels.RegisterInput(new AudioChannel("in1", "In.gain", "In.mute", -100, 0, true, 1, 0, Array.Empty<string>()));
         var zones = new AudioZoneRegistry(deviceId);
         zones.TryRegister("in1", "z1", "Zone.A.enable");
         var triggers = new LogicTriggerRegistry(deviceId);

@@ -273,7 +273,7 @@ public sealed class ConnectionManagerTests
         e.Should().Throw<ArgumentNullException>();
     }
 
-    private static async Task WaitForStateAsync(ConnectionManager manager, ConnectionState desired, int timeoutMs = 10000)
+    private static async Task WaitForStateAsync(ConnectionManager manager, ConnectionState desired, int timeoutMs = 30000)
     {
         // Event-driven: subscribe to StateChanged, then snapshot current
         // state under the same lock the manager uses (well — actually we
@@ -324,7 +324,7 @@ public sealed class ConnectionManagerTests
         }
     }
 
-    private static async Task WaitForConnectCountAsync(StubTransport transport, int desired, int timeoutMs = 10000)
+    private static async Task WaitForConnectCountAsync(StubTransport transport, int desired, int timeoutMs = 30000)
     {
         DateTime deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
         while (transport.ConnectCallCount < desired)

@@ -16,6 +16,10 @@
     <!-- README §"Allowed 3rd Party NuGet Packages" -->
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageVersion Include="Crestron.SimplSharp.SDK.ProgramLibrary" Version="2.21.237" />
+    <!-- <PackageVersion Include="gcu-common-utils"     Version="4.3.3" />
+    <PackageVersion Include="gcu-hardware-service" Version="4.3.4" />
+    <PackageVersion Include="gcu-domain-service"   Version="4.2.3" /> -->
+
   </ItemGroup>
 
   <ItemGroup Label="Analyzers (build-time only, not shipped)">

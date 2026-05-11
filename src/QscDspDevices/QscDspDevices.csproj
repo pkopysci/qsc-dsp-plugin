@@ -30,6 +30,10 @@
     <!-- Allowed third-party deps (README §"Allowed 3rd Party NuGet Packages") -->
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="Crestron.SimplSharp.SDK.ProgramLibrary" />
+    <!-- <PackageReference Include="gcu-common-utils" />
+    <PackageReference Include="gcu-hardware-service" />
+    <PackageReference Include="gcu-domain-service" /> -->
+
   </ItemGroup>
 
   <ItemGroup>

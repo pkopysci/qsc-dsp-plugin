@@ -2,6 +2,7 @@
 
 using System.Threading;
 using System.Threading.Tasks;
+using gcu_common_utils.GenericEventArgs;
 using QscDspDevices.AudioControl;
 using QscDspDevices.LogicTriggers;
 using QscDspDevices.Plugin;
@@ -98,6 +99,12 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
         _queue = queue;
         _dispatcher = dispatcher;
         _logon = logon;
+
+        // Route ChangeGroup.Poll server-push notifications to the manager.
+        // Subscribed once here (not in RunAsync) so reconnect cycles don't
+        // accumulate duplicate handlers. Notifications carry Params not
+        // Result, so HandleAutoPollPush must accept both shapes.
+        _dispatcher.NotificationReceived += OnNotificationReceived;
     }
 
     /// <summary>
@@ -215,6 +222,14 @@ public sealed class HydrateChangeGroupAction : IPostConnectAction
         }
 
         Log.Debug(_deviceId, $"Change group '{ChangeGroupManager.PluginGroupId}' subscribed ({subscribed} controls) at {ChangeGroupManager.DefaultAutoPollSeconds * 1000:0}ms AutoPoll.");
+    }
+
+    private void OnNotificationReceived(object? sender, GenericSingleEventArgs<JsonRpcResponse> args)
+    {
+        if (string.Equals(args.Arg.Method, "ChangeGroup.Poll", StringComparison.Ordinal))
+        {
+            _groupManager.HandleAutoPollPush(args.Arg);
+        }
     }
 
     private bool TrySubscribe(string controlName, string ownerDescription)

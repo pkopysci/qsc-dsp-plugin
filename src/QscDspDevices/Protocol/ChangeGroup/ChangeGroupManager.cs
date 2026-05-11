@@ -271,12 +271,13 @@ public sealed class ChangeGroupManager : IAutoPollSubscription
             return;
         }
 
-        // The Result shape is `{ Id: "...", Changes: [...] }`. Indexing
-        // into a JValue (e.g., a string or number Result) throws
-        // InvalidOperationException — guard via a JObject type check
-        // so a malformed AutoPoll response doesn't crash the receive
-        // thread (#23).
-        if (response.Result is not JObject result)
+        // ChangeGroup.Poll can arrive in two shapes:
+        //   - AutoPoll acknowledgement (id-correlated): data is in Result
+        //   - Server-push notification (no id): data is in Params
+        // Prefer Result; fall back to Params. Guard against JValue (e.g. a
+        // scalar Result) which would throw on indexing — drop silently (#23).
+        JToken? payload = response.Result ?? response.Params;
+        if (payload is not JObject result)
         {
             return;
         }

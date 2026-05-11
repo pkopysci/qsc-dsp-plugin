@@ -49,7 +49,6 @@ public sealed class FakeQrcServer : IDisposable
     private readonly object _failureLock = new();
     private readonly object _receivedLock = new();
     private readonly List<ReceivedFrame> _receivedFramesList = new();
-    private readonly Dictionary<long, string> _autoPollIdsByGroup = new();
 
     private Task? _acceptLoop;
     private int _delayMs;
@@ -161,10 +160,10 @@ public sealed class FakeQrcServer : IDisposable
     }
 
     /// <summary>
-    /// Pushes an AutoPoll-style delta to every connected client whose
-    /// session has registered an AutoPoll request for the given group.
-    /// The push reuses the AutoPoll id (per <c>research/QRC_PROTOCOL.md</c>
-    /// §5) so the dispatcher routes it through the same subscription.
+    /// Pushes a <c>ChangeGroup.Poll</c> notification to every connected
+    /// client, matching the real Q-SYS Core behaviour: the server sends an
+    /// unsolicited notification (no <c>id</c>) with <c>method</c> and
+    /// <c>params</c>, not an id-correlated response.
     /// </summary>
     /// <param name="groupId">The change-group id.</param>
     /// <param name="changes">The deltas to push (Name + Value pairs).</param>
@@ -175,33 +174,18 @@ public sealed class FakeQrcServer : IDisposable
         ArgumentNullException.ThrowIfNull(groupId);
         ArgumentNullException.ThrowIfNull(changes);
 
-        long[] ids;
-        lock (_receivedLock)
-        {
-            ids = _autoPollIdsByGroup.Where(kv => string.Equals(kv.Value, groupId, StringComparison.Ordinal))
-                .Select(kv => kv.Key)
-                .ToArray();
-        }
-
         object[] changeArray = changes.Select(c => (object)new { c.Name, c.Value }).ToArray();
-        foreach (long id in ids)
+        var payload = new
         {
-            var payload = new
-            {
-                jsonrpc = "2.0",
-                id,
-                result = new
-                {
-                    Id = groupId,
-                    Changes = changeArray
-                },
-            };
+            jsonrpc = "2.0",
+            method = "ChangeGroup.Poll",
+            @params = new { Id = groupId, Changes = changeArray },
+        };
 
-            string json = JsonConvert.SerializeObject(payload);
-            foreach ((int _, ClientSession client) in _clients)
-            {
-                await client.SendRawAsync(json).ConfigureAwait(false);
-            }
+        string json = JsonConvert.SerializeObject(payload);
+        foreach ((int _, ClientSession client) in _clients)
+        {
+            await client.SendRawAsync(json).ConfigureAwait(false);
         }
     }
 
@@ -255,13 +239,6 @@ public sealed class FakeQrcServer : IDisposable
         lock (_receivedLock)
         {
             _receivedFramesList.Add(new ReceivedFrame(method, @params, id));
-            if (string.Equals(method, "ChangeGroup.AutoPoll", StringComparison.Ordinal)
-                && id.HasValue
-                && @params is JObject obj
-                && obj["Id"]?.ToString() is { } gid)
-            {
-                _autoPollIdsByGroup[id.Value] = gid;
-            }
         }
     }
 

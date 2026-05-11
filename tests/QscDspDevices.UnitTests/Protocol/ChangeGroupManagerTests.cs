@@ -226,4 +226,54 @@ public sealed class ChangeGroupManagerTests
         act.Should().NotThrow();
         deltas.Should().Be(0);
     }
+
+    [Fact]
+    public void HandleAutoPollPush_with_notification_Params_dispatches_deltas()
+    {
+        // ChangeGroup.Poll server-push notifications carry data in Params,
+        // not Result (they have no id). HandleAutoPollPush must read from
+        // Params when Result is absent.
+        var sut = new ChangeGroupManager("dsp-1", new IdGenerator());
+        var collected = new List<ChangeGroupDelta>();
+        sut.SetDeltaCallback(collected.Add);
+
+        var notification = new JsonRpcResponse
+        {
+            Method = "ChangeGroup.Poll",
+            Params = JToken.Parse(@"{
+                ""Id"": ""qsc-plugin-state"",
+                ""Changes"": [
+                  { ""Name"": ""ZONE-01-LEVEL"", ""Value"": -53.45454788, ""Position"": 0.38787877 },
+                  { ""Name"": ""ZONE-01-MUTE"",  ""Value"": 0.0, ""Position"": 0.0 }
+                ]
+              }"),
+        };
+
+        sut.HandleAutoPollPush(notification);
+
+        collected.Should().HaveCount(2);
+        collected[0].Name.Should().Be("ZONE-01-LEVEL");
+        collected[0].Position.Should().BeApproximately(0.38787877, 1e-6);
+        collected[1].Name.Should().Be("ZONE-01-MUTE");
+        collected[1].Value.ToObject<double>().Should().BeApproximately(0.0, 1e-9);
+    }
+
+    [Fact]
+    public void HandleAutoPollPush_with_notification_missing_Changes_skips_silently()
+    {
+        var sut = new ChangeGroupManager("dsp-1", new IdGenerator());
+        bool called = false;
+        sut.SetDeltaCallback(_ => called = true);
+
+        // Notification with no Changes key — must not throw or invoke callback.
+        var noChanges = new JsonRpcResponse
+        {
+            Method = "ChangeGroup.Poll",
+            Params = JToken.Parse(@"{ ""Id"": ""qsc-plugin-state"" }"),
+        };
+
+        Action act = () => sut.HandleAutoPollPush(noChanges);
+        act.Should().NotThrow();
+        called.Should().BeFalse();
+    }
 }

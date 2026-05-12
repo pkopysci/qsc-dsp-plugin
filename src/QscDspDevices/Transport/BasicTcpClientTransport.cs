@@ -1,6 +1,8 @@
 // Copyright (c) 2026 QscDspDevices Contributors. Licensed under MIT.
 
 using gcu_common_utils.GenericEventArgs;
+using gcu_common_utils.Logging;
+using gcu_common_utils.Logging.LoggingTypes;
 using gcu_common_utils.NetComs;
 
 namespace QscDspDevices.Transport;
@@ -27,7 +29,10 @@ namespace QscDspDevices.Transport;
 /// </remarks>
 public sealed class BasicTcpClientTransport : IConnectionTransport
 {
-    private readonly BasicTcpClient _client;
+    private readonly string _hostname;
+    private readonly int _port;
+    private readonly int _bufferSize;
+    private BasicTcpClient _client;
     private bool _disposed;
 
     /// <summary>
@@ -41,16 +46,10 @@ public sealed class BasicTcpClientTransport : IConnectionTransport
     /// <exception cref="ArgumentException">If <paramref name="port"/> is outside 0..65535 or <paramref name="bufferSize"/> is negative.</exception>
     public BasicTcpClientTransport(string hostname, int port, int bufferSize = 8192)
     {
-        _client = new BasicTcpClient(hostname, port, bufferSize)
-        {
-            // Plugin's ConnectionManager owns reconnect policy; framework
-            // client's built-in reconnect would race and double-up attempts.
-            EnableReconnect = false,
-        };
-
-        _client.ClientConnected += OnClientConnected;
-        _client.ConnectionFailed += OnConnectionFailed;
-        _client.RxBytesReceived += OnRxBytesReceived;
+        _hostname = hostname;
+        _port = port;
+        _bufferSize = bufferSize;
+        _client = BuildClient();
     }
 
     /// <inheritdoc />
@@ -69,6 +68,27 @@ public sealed class BasicTcpClientTransport : IConnectionTransport
     public void Connect()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        Logger.Debug(
+            LogServiceTypes.Hardware,
+            LogDeviceTypes.Dsp,
+            nameof(BasicTcpClientTransport),
+            $"{nameof(Connect)}()");
+
+        // Re-create the underlying BasicTcpClient on every Connect() call.
+        // gcu-common-utils BasicTcpClient wraps Crestron's TCPClient whose
+        // internal state machine does not reliably reset after a mid-session
+        // disconnect: calling Connect() on a previously-used instance fires
+        // no ClientConnected / ConnectionFailed callbacks, causing the
+        // ConnectionManager's TryOneAttemptAsync to hang forever.
+        // Disposing the old instance and constructing a fresh one gives the
+        // Crestron socket layer a clean starting state on each attempt.
+        _client.ClientConnected -= OnClientConnected;
+        _client.ConnectionFailed -= OnConnectionFailed;
+        _client.RxBytesReceived -= OnRxBytesReceived;
+        _client.Dispose();
+        _client = BuildClient();
+
         _client.Connect();
     }
 
@@ -116,6 +136,20 @@ public sealed class BasicTcpClientTransport : IConnectionTransport
         // public events to null does not free subscribers' references; it
         // only changes our local view, and is confusing to readers.
         _client.Dispose();
+    }
+
+    private BasicTcpClient BuildClient()
+    {
+        var client = new BasicTcpClient(_hostname, _port, _bufferSize)
+        {
+            // Plugin's ConnectionManager owns reconnect policy; framework
+            // client's built-in reconnect would race and double-up attempts.
+            EnableReconnect = false,
+        };
+        client.ClientConnected += OnClientConnected;
+        client.ConnectionFailed += OnConnectionFailed;
+        client.RxBytesReceived += OnRxBytesReceived;
+        return client;
     }
 
     private void OnClientConnected(object? sender, EventArgs e)
